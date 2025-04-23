@@ -106,6 +106,7 @@ def main():
         valid_lines = get_valid_lines(full_diff)
 
         print(f"➡️ Arquivo: {file_path}")
+
         analysis = ask_chatgpt(change["diff"])
         print(f"🧠 Análise da IA para `{file_path}`:\n{analysis}\n{'-'*80}")
 

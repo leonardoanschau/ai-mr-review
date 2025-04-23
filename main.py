@@ -90,6 +90,23 @@ def get_valid_lines(diff_text):
                     valid_lines.add(line.target_line_no)
     return valid_lines
 
+def get_hunk_ranges(diff_text):
+    """
+    Retorna uma lista de tuplas (start, end, set de linhas adicionadas) para cada hunk do diff.
+    """
+    patch = PatchSet(diff_text)
+    hunk_ranges = []
+    for patched_file in patch:
+        for hunk in patched_file:
+            start = hunk.target_start
+            end = hunk.target_start + hunk.target_length - 1
+            added_lines = set()
+            for line in hunk:
+                if line.is_added:
+                    added_lines.add(line.target_line_no)
+            hunk_ranges.append((start, end, added_lines))
+    return hunk_ranges
+
 def main():
     print(f"🔎 Buscando alterações do MR {MR_ID}...")
     url = f"{GITLAB_API_URL}/projects/{PROJECT_ID}/merge_requests/{MR_ID}/changes"
@@ -104,31 +121,45 @@ def main():
         file_path = change["new_path"]
         full_diff = build_full_diff(change)
         valid_lines = get_valid_lines(full_diff)
+        hunk_ranges = get_hunk_ranges(full_diff)
 
         print(f"➡️ Arquivo: {file_path}")
 
         analysis = ask_chatgpt(change["diff"])
         print(f"🧠 Análise da IA para `{file_path}`:\n{analysis}\n{'-'*80}")
 
-        for line in analysis.split('\n'):
+        for idx, line in enumerate(analysis.split('\n')):
             match = re.search(r"Linha (\d+):", line)
             if match:
                 try:
                     line_number = int(match.group(1))
-                    if line_number not in valid_lines:
-                        print(f"⚠️ Linha {line_number} não está no diff, comentário ignorado.")
-                        continue
+                    # Captura o bloco de sugestão completo
+                    suggestion_lines = []
                     suggestion = line.split(":", 1)[1].strip()
-                    if not suggestion:
-                        idx = analysis.split('\n').index(line)
-                        suggestion_lines = []
-                        for next_line in analysis.split('\n')[idx+1:]:
-                            if next_line.strip() == "" or re.search(r"Linha \d+:", next_line):
+                    if suggestion:
+                        suggestion_lines.append(suggestion)
+                    for next_line in analysis.split('\n')[idx+1:]:
+                        if re.search(r"Linha \d+:", next_line):
+                            break
+                        suggestion_lines.append(next_line)
+                    suggestion_block = "\n".join(suggestion_lines).strip()
+                    
+                    if line_number in valid_lines:
+                        comment_on_mr(file_path, line_number, suggestion_block, diff_refs)
+                        print(f"💬 Comentário adicionado na linha {line_number} de {file_path}")
+                    else:
+                        # Procura em qual hunk a linha se encaixa
+                        commented = False
+                        for start, end, added_lines in hunk_ranges:
+                            if start <= line_number <= end and added_lines:
+                                target_line = min(added_lines)
+                                # Apenas o bloco de sugestão, sem linha informativa
+                                comment_on_mr(file_path, target_line, suggestion_block, diff_refs)
+                                print(f"💬 Comentário adicionado na linha {target_line} (bloco {start}-{end}) de {file_path}")
+                                commented = True
                                 break
-                            suggestion_lines.append(next_line.strip())
-                        suggestion = " ".join(suggestion_lines)
-                    comment_on_mr(file_path, line_number, suggestion, diff_refs)
-                    print(f"💬 Comentário adicionado na linha {line_number} de {file_path}")
+                        if not commented:
+                            print(f"⚠️ Linha {line_number} não está no diff nem em nenhum bloco, comentário ignorado.")
                 except Exception as e:
                     print(f"⚠️ Erro ao comentar: {e}")
 

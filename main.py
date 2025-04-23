@@ -1,66 +1,35 @@
 import requests
 import os
+import re
+from unidiff import PatchSet
 
 # Configure suas variáveis
 GITLAB_TOKEN = os.getenv("GITLAB_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GITLAB_API_URL = "http://gitlab.dimed.com.br/api/v4"
 PROJECT_ID = "381"
-MR_ID = "1197"  # conforme sua URL
+MR_ID = "1258"  # conforme sua URL
 
 HEADERS = {
     "PRIVATE-TOKEN": GITLAB_TOKEN
 }
 
 def get_mr_changes():
-    url = "http://gitlab.dimed.com.br/api/v4/projects/381/merge_requests/1197/changes"
+    url = f"{GITLAB_API_URL}/projects/{PROJECT_ID}/merge_requests/{MR_ID}/changes"
     resp = requests.get(url, headers=HEADERS)
     resp.raise_for_status()
     return resp.json()["changes"]
 
 def ask_chatgpt(file_diff):
     prompt = (
-        "Você é um revisor de código experiente em projetos que utilizam Java 21, 17 e 11 como backend, assim como spring-boot e angular para o front-end.\n"
-        "Seu trabalho é analisar o código e sugerir melhorias, correções e boas práticas.\n"
-        "Você deve analisar pontos importantes e não sugerir melhorias supérfluas:\n"
-        "Ao sugerir melhorias, dê exemplos se possível, mas não se extenda muito.\n"
-        "Seja direto e objetivo, evitando rodeios.\n"
-        "Avalie o seguinte diff de código considerando os seguintes pontos:\n"
-        "- Não sugira comentários no código\n"
-        "- Sugira criações de testes unitários\n"
-        "- Sugira criações de testes de integração\n"
-        "- Sugira separação de responsabilidade em métodos extensos\n"
-        "- Clareza e legibilidade do código\n"
-        "- Estrutura e organização do código\n"
-        "- Uso adequado de nomes de variáveis e funções\n"
-        "- Aderência aos princípios SOLID\n"
-        "- Aderência aos princípios DRY (Don't Repeat Yourself) e KISS (Keep It Simple, Stupid)\n"
-        "- Aderência aos princípios de Clean Architecture\n"
-        "- Aderência aos princípios de Clean Code\n"
-        "- Quando avaliar back-end sugerir aderência aos padrões (Controller, Facade, Service, Repository)\n"
-        "- Uso adequado de padrões de projeto (Design Patterns) quando aplicável\n"
-        '- Uso adequado de injeção de dependência\n'
-        "- Uso adequado de abstrações e interfaces\n"
-        "- Uso adequado de tratamento de erros e exceções\n"
-        "- Uso adequado de logging e monitoramento\n"
-        "- Uso adequado de segurança e proteção de dados\n"
-        "- Uso adequado de testes automatizados\n"
-        "- Uso do padrão de projeto strategy e observer quando possível\n"
-        "- Uso adequado de ORM (Object-Relational Mapping) e consultas SQL\n"
-        "- Uso adequado de cache e otimização de consultas\n"
-        "- Uso adequado de filas e processamento assíncrono\n"
-        "- Uso adequado de APIs e integração com serviços externos\n"
-        "- Uso adequado de versionamento de API\n"       
-        "- Performance e eficiência do código\n"
-        "- Princípios de Domain Driven Design (DDD)\n"
-        "- Aplicação rigorosa dos princípios de Clean Code (legibilidade, simplicidade, nomes claros, funções pequenas, etc)\n"
-        "Performance é prioridade máxima: aponte qualquer oportunidade de otimização.\n"
-        "Seja extremamente rigoroso na aplicação dos princípios de Clean Code.\n"
-        "Identifique claramente violações dos padrões Controller, Facade, Service, Repository e de Domain Driven Design.\n"
-        "Indique oportunidades de refatoração para melhor aderência a esses padrões.\n"
-        "Se possível, forneça exemplos objetivos e curtos para cada sugestão."
+        "Você é um revisor de código experiente em projetos Java (Spring Boot) e Angular, com foco em performance, Clean Code, DDD e padrões Controller, Facade, Service e Repository.\n"
+        "Analise apenas o que foi alterado no diff abaixo. NÃO faça comentários genéricos ou subjetivos.\n"
+        "Para cada ponto de melhoria, seja específico: aponte exatamente o trecho, explique o problema e proponha uma solução objetiva e prática.\n"
+        "Evite frases vagas como 'deve ser revisado para garantir Clean Code'. Em vez disso, diga o que deve ser mudado e como.\n"
+        "Se possível, forneça exemplos curtos de código corrigido.\n"
+        "Priorize performance, clareza, simplicidade e aderência aos padrões do time.\n"
         f"{file_diff}\n"
-        "Faça uma análise criteriosa e, se possível, sugira exemplos de melhorias."
+        "Liste as melhorias de forma direta e acionável. Para cada sugestão, indique o número da linha afetada, se possível, no formato: Linha X: sugestão."
     )
     response = requests.post(
         "https://api.openai.com/v1/chat/completions",
@@ -69,9 +38,9 @@ def ask_chatgpt(file_diff):
             "Content-Type": "application/json"
         },
         json={
-            "model": "gpt-4o",
+            "model": "gpt-4o-mini",
             "messages": [
-                {"role": "system", "content": "Você é um revisor de código experiente, direto e detalhista."},
+                {"role": "system", "content": "Você é um revisor de código experiente, direto, objetivo e detalhista."},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.2
@@ -80,18 +49,87 @@ def ask_chatgpt(file_diff):
     response.raise_for_status()
     return response.json()["choices"][0]["message"]["content"]
 
+def comment_on_mr(file_path, line, body, diff_refs):
+    url = f"{GITLAB_API_URL}/projects/{PROJECT_ID}/merge_requests/{MR_ID}/discussions"
+    data = {
+        "body": body,
+        "position": {
+            "position_type": "text",
+            "new_path": file_path,
+            "new_line": line,
+            "base_sha": diff_refs["base_sha"],
+            "start_sha": diff_refs["start_sha"],
+            "head_sha": diff_refs["head_sha"]
+        }
+    }
+    print(f"DEBUG: Enviando comentário: {data}")
+    resp = requests.post(url, headers=HEADERS, json=data)
+    if resp.status_code != 201:
+        print(f"Resposta da API: {resp.text}")
+    resp.raise_for_status()
+    return resp.json()
+
+def build_full_diff(change):
+    return (
+        f"diff --git a/{change['old_path']} b/{change['new_path']}\n"
+        f"--- a/{change['old_path']}\n"
+        f"+++ b/{change['new_path']}\n"
+        f"{change['diff']}"
+    )
+
+def get_valid_lines(diff_text):
+    """
+    Retorna um set com os números das linhas adicionadas no diff.
+    """
+    patch = PatchSet(diff_text)
+    valid_lines = set()
+    for patched_file in patch:
+        for hunk in patched_file:
+            for line in hunk:
+                if line.is_added:
+                    valid_lines.add(line.target_line_no)
+    return valid_lines
+
 def main():
     print(f"🔎 Buscando alterações do MR {MR_ID}...")
-    changes = get_mr_changes()
+    url = f"{GITLAB_API_URL}/projects/{PROJECT_ID}/merge_requests/{MR_ID}/changes"
+    resp = requests.get(url, headers=HEADERS)
+    resp.raise_for_status()
+    mr_data = resp.json()
+    changes = mr_data["changes"]
+    diff_refs = mr_data["diff_refs"]
     print(f"📄 {len(changes)} arquivos encontrados.\n")
 
     for change in changes:
         file_path = change["new_path"]
-        diff = change["diff"]
+        full_diff = build_full_diff(change)
+        valid_lines = get_valid_lines(full_diff)
 
         print(f"➡️ Arquivo: {file_path}")
-        analysis = ask_chatgpt(diff)
+        analysis = ask_chatgpt(change["diff"])
         print(f"🧠 Análise da IA para `{file_path}`:\n{analysis}\n{'-'*80}")
+
+        for line in analysis.split('\n'):
+            match = re.search(r"Linha (\d+):", line)
+            if match:
+                try:
+                    line_number = int(match.group(1))
+                    if line_number not in valid_lines:
+                        print(f"⚠️ Linha {line_number} não está no diff, comentário ignorado.")
+                        continue
+                    suggestion = line.split(":", 1)[1].strip()
+                    if not suggestion:
+                        idx = analysis.split('\n').index(line)
+                        suggestion_lines = []
+                        for next_line in analysis.split('\n')[idx+1:]:
+                            if next_line.strip() == "" or re.search(r"Linha \d+:", next_line):
+                                break
+                            suggestion_lines.append(next_line.strip())
+                        suggestion = " ".join(suggestion_lines)
+                    comment_on_mr(file_path, line_number, suggestion, diff_refs)
+                    print(f"💬 Comentário adicionado na linha {line_number} de {file_path}")
+                except Exception as e:
+                    print(f"⚠️ Erro ao comentar: {e}")
 
 if __name__ == "__main__":
     main()

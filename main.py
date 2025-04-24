@@ -8,7 +8,7 @@ GITLAB_TOKEN = os.getenv("GITLAB_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GITLAB_API_URL = "http://gitlab.dimed.com.br/api/v4"
 PROJECT_ID = "381"
-MR_ID = "1258"  # conforme sua URL
+MR_ID = "1259"  # conforme sua URL
 
 HEADERS = {
     "PRIVATE-TOKEN": GITLAB_TOKEN
@@ -27,6 +27,10 @@ def ask_chatgpt(file_diff):
         "Para cada ponto de melhoria, seja específico: aponte exatamente o trecho, explique o problema e proponha uma solução objetiva e prática.\n"
         "Evite frases vagas como 'deve ser revisado para garantir Clean Code'. Em vez disso, diga o que deve ser mudado e como.\n"
         "Se possível, forneça exemplos curtos de código corrigido.\n"
+        "Nem todos os pontos precisam ser abordados se o código está legível e objetivo, mas evite deixar de lado questões importantes.\n"
+        "Näo faça comentários para adicionar bloco de comentários no método estilo javadocs. Vai contra o Clean Code.\n" 
+        "Não faça sugestões de refatoração extensas ou complexas, a menos que sejam realmente necessárias. Foque em melhorias pontuais e práticas.\n"
+        "Estimule a usar ideias simples e práticas, como: 'Use Optional para evitar NullPointerException'. Libs/bibliotecas novas com a evolução das linguagens.\n"
         "Priorize performance, clareza, simplicidade e aderência aos padrões do time.\n"
         f"{file_diff}\n"
         "Liste as melhorias de forma direta e acionável. Para cada sugestão, indique o número da linha afetada, se possível, no formato: Linha X: sugestão."

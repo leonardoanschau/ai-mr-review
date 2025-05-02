@@ -7,8 +7,8 @@ from unidiff import PatchSet
 GITLAB_TOKEN = os.getenv("GITLAB_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GITLAB_API_URL = "http://gitlab.dimed.com.br/api/v4"
-PROJECT_ID = "381"
-MR_ID = "1259"  # conforme sua URL
+PROJECT_ID = "1208"
+MR_ID = "114"  # conforme sua URL
 
 HEADERS = {
     "PRIVATE-TOKEN": GITLAB_TOKEN
@@ -24,6 +24,7 @@ def ask_chatgpt(file_diff):
     prompt = (
         "Você é um revisor de código experiente em projetos Java (Spring Boot) e Angular, com foco em performance, Clean Code, DDD e padrões Controller, Facade, Service e Repository.\n"
         "Analise apenas o que foi alterado no diff abaixo. NÃO faça comentários genéricos ou subjetivos.\n"
+        "Se foram alterados apenas os nomes dos métodos, não de sugestão sobre o método todo. Apenas se for o nome\n"
         "Para cada ponto de melhoria, seja específico: aponte exatamente o trecho, explique o problema e proponha uma solução objetiva e prática.\n"
         "Evite frases vagas como 'deve ser revisado para garantir Clean Code'. Em vez disso, diga o que deve ser mudado e como.\n"
         "Se possível, forneça exemplos curtos de código corrigido.\n"
@@ -42,7 +43,7 @@ def ask_chatgpt(file_diff):
             "Content-Type": "application/json"
         },
         json={
-            "model": "gpt-4o-mini",
+            "model": "gpt-4o",
             "messages": [
                 {"role": "system", "content": "Você é um revisor de código experiente, direto, objetivo e detalhista."},
                 {"role": "user", "content": prompt}

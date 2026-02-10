@@ -43,21 +43,18 @@ def ask_chatgpt(file_diff, observacoes_usuario=""):
         )
     
     prompt = (
-        "Você é um revisor de código experiente em projetos Java (Spring Boot) e Angular, com foco em performance, Clean Code, DDD e padrões Controller, Facade, Service e Repository.\n"
+        "Você é um revisor de código experiente em projetos Java (Spring Boot) com foco em performance\n"
+        "Comente se o código não estiver de acordo com as recomendações de Clean Code, SOLID, DDD e melhores práticas de desenvolvimento.\n"
         "Analise apenas o que foi alterado no diff abaixo. NÃO faça comentários genéricos ou subjetivos.\n"
-        "SEJA SELETIVO: Comente apenas mudanças que realmente importam. NÃO comente:\n"
-        "- Renomeações simples de variáveis ou métodos (a menos que o novo nome seja inadequado)\n"
-        "- Mudanças de formatação ou estilo\n"
-        "- Alterações triviais ou óbvias\n"
-        "- Adição de nova linha no final do arquivo\n"
-        "- Comentários genéricos tipo 'veja se é necessário' ou 'verifique se funciona'\n"
+        "SEJA SELETIVO: Comente apenas mudanças que realmente importam."
+        "Sempre diga o porque da sugestão, o impacto e a solução. Evite sugestões vagas ou genéricas.\n"
+        "Ao comentar sugestão de código, utilize a formatação do gitlab para o gitlab saber que é código Java"
+        "Nao faça Comentários genéricos tipo 'veja se é necessário' ou 'verifique se funciona'\n"
         "Para cada ponto de melhoria, seja específico: aponte exatamente o trecho, explique o problema REAL e proponha uma solução objetiva.\n"
-        "Comente apenas se houver:\n"
-        "- Problemas de performance\n"
-        "- Bugs ou riscos de erro (NullPointerException, race conditions, etc.)\n"
-        "- Violações claras de princípios (SOLID, DDD, padrões do projeto)\n"
-        "- Oportunidades de uso de recursos modernos da linguagem/framework\n"
-        "Evite frases vagas. Em vez de 'deve ser revisado', diga exatamente o que mudar e por quê.\n"
+        "Comente apenas se houver Problemas de performance\n"
+        "Comente apenas se houver Bugs ou riscos de erro (NullPointerException, race conditions, etc.)\n"
+        "Comente apenas se houver Violações claras de princípios (SOLID, DDD, padrões do projeto)\n"
+        "Comente apenas se houver Oportunidades de uso de recursos modernos da linguagem/framework\n"
         "Se possível, forneça exemplos curtos de código corrigido.\n"
         "NÃO faça comentários para adicionar javadocs. Vai contra Clean Code.\n"
         "Se o código está bom e funcional, NÃO force comentários. Prefira não comentar a fazer sugestões fracas.\n"
@@ -72,7 +69,7 @@ def ask_chatgpt(file_diff, observacoes_usuario=""):
             "Content-Type": "application/json"
         },
         json={
-            "model": "gpt-4o",
+            "model": "gpt-4.1",
             "messages": [
                 {"role": "system", "content": "Você é um revisor de código experiente, direto, objetivo e detalhista."},
                 {"role": "user", "content": prompt}
@@ -144,48 +141,51 @@ def get_hunk_ranges(diff_text):
 def main():
     # Solicita a URL do MR ao usuário
     mr_url = input("🔗 Cole a URL do Merge Request: ").strip()
-    
+
     # Solicita observações personalizadas (opcional)
     print("\n📝 Observações personalizadas para o revisor (opcional - pressione Enter para pular):")
     observacoes = input("   Exemplo: 'Foque em performance de queries' ou 'Verifique tratamento de erros': ").strip()
-    
+
     try:
         PROJECT_ID, MR_ID = parse_mr_url(mr_url)
     except ValueError as e:
         print(f"❌ Erro: {e}")
         return
-    
-    print(f"🔎 Buscando alterações do MR {MR_ID}...")
+
+    print(f"\n🔍 Iniciando análise do Merge Request {MR_ID}...\n")
+
     url = f"{GITLAB_API_URL}/projects/{PROJECT_ID}/merge_requests/{MR_ID}/changes"
     resp = requests.get(url, headers=HEADERS)
     resp.raise_for_status()
     mr_data = resp.json()
     changes = mr_data["changes"]
     diff_refs = mr_data["diff_refs"]
-    print(f"📄 {len(changes)} arquivos encontrados.\n")
+
+    print(f"📂 {len(changes)} arquivos encontrados para análise.\n")
+
+    total_sugestoes = 0
+    total_comentarios = 0
 
     for change in changes:
         file_path = change["new_path"]
+        print(f"➡️ Analisando arquivo: {file_path}")
+
         full_diff = build_full_diff(change)
         valid_lines = get_valid_lines(full_diff)
         hunk_ranges = get_hunk_ranges(full_diff)
 
-        print(f"➡️ Arquivo: {file_path}")
-
         analysis = ask_chatgpt(change["diff"], observacoes)
-        print(f"🧠 Análise da IA para `{file_path}`:\n{analysis}\n{'-'*80}")
+        print(f"   🧠 Sugestões geradas pela IA para `{file_path}`:\n")
 
-        # Contador de comentários
         comentarios_postados = 0
         linhas_encontradas = 0
-        
+
         for idx, line in enumerate(analysis.split('\n')):
             match = re.search(r"Linha (\d+):", line)
             if match:
                 linhas_encontradas += 1
                 try:
                     line_number = int(match.group(1))
-                    # Captura o bloco de sugestão completo
                     suggestion_lines = []
                     suggestion = line.split(":", 1)[1].strip()
                     if suggestion:
@@ -195,33 +195,35 @@ def main():
                             break
                         suggestion_lines.append(next_line)
                     suggestion_block = "\n".join(suggestion_lines).strip()
-                    
+
                     if line_number in valid_lines:
                         comment_on_mr(PROJECT_ID, MR_ID, file_path, line_number, suggestion_block, diff_refs)
-                        print(f"💬 Comentário adicionado na linha {line_number} de {file_path}")
                         comentarios_postados += 1
                     else:
-                        # Procura em qual hunk a linha se encaixa
                         commented = False
                         for start, end, added_lines in hunk_ranges:
                             if start <= line_number <= end and added_lines:
                                 target_line = min(added_lines)
-                                # Apenas o bloco de sugestão, sem linha informativa
                                 comment_on_mr(PROJECT_ID, MR_ID, file_path, target_line, suggestion_block, diff_refs)
-                                print(f"💬 Comentário adicionado na linha {target_line} (bloco {start}-{end}) de {file_path}")
-                                commented = True
                                 comentarios_postados += 1
+                                commented = True
                                 break
                         if not commented:
-                            print(f"⚠️ Linha {line_number} não está no diff nem em nenhum bloco, comentário ignorado.")
+                            print(f"   ⚠️ Linha {line_number} não está no diff nem em nenhum bloco, comentário ignorado.")
                 except Exception as e:
-                    print(f"⚠️ Erro ao comentar: {e}")
-        
-        # Resumo do arquivo
+                    print(f"   ⚠️ Erro ao comentar: {e}")
+
+        total_sugestoes += linhas_encontradas
+        total_comentarios += comentarios_postados
+
         if linhas_encontradas == 0:
-            print(f"✅ Nenhuma sugestão para {file_path} - código está OK!")
+            print(f"   ✅ Nenhuma sugestão para {file_path} - código está OK!\n")
         else:
-            print(f"📊 Resumo: {comentarios_postados}/{linhas_encontradas} sugestões postadas para {file_path}\n")
+            print(f"   📊 Resumo: {comentarios_postados}/{linhas_encontradas} sugestões postadas para {file_path}\n")
+
+    print("\n✨ Análise concluída!")
+    print(f"📊 Total de sugestões geradas: {total_sugestoes}")
+    print(f"💬 Total de comentários postados: {total_comentarios}\n")
 
 if __name__ == "__main__":
     main()

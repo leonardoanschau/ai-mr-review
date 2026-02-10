@@ -43,12 +43,14 @@ def ask_chatgpt(file_diff, observacoes_usuario=""):
         )
     
     prompt = (
-        "Você é um revisor de código experiente em projetos Java (Spring Boot) com foco em performance\n"
+        "Você é um revisor de código experiente em projetos Java (Spring Boot) 21 com foco em performance\n"
         "Comente se o código não estiver de acordo com as recomendações de Clean Code, SOLID, DDD e melhores práticas de desenvolvimento.\n"
         "Analise apenas o que foi alterado no diff abaixo. NÃO faça comentários genéricos ou subjetivos.\n"
         "SEJA SELETIVO: Comente apenas mudanças que realmente importam."
         "Sempre diga o porque da sugestão, o impacto e a solução. Evite sugestões vagas ou genéricas.\n"
         "Ao comentar sugestão de código, utilize a formatação do gitlab para o gitlab saber que é código Java"
+        "Sempre sugira uso de streams, lambdas, Optional, var, records, pattern matching e outros recursos modernos do Java quando aplicável.\n"
+        "Explique sempre quando usar stream que é por causa da imutabilidade, facilidade de leitura e paralelismo. Explique sempre quando usar Optional que é para evitar NullPointerException e deixar claro que o valor pode ser ausente.\n"
         "Nao faça Comentários genéricos tipo 'veja se é necessário' ou 'verifique se funciona'\n"
         "Para cada ponto de melhoria, seja específico: aponte exatamente o trecho, explique o problema REAL e proponha uma solução objetiva.\n"
         "Comente apenas se houver Problemas de performance\n"

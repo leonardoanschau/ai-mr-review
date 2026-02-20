@@ -1,6 +1,7 @@
 import requests
 import os
 import re
+import time
 from difflib import SequenceMatcher
 from urllib.parse import quote
 from unidiff import PatchSet
@@ -15,6 +16,16 @@ HEADERS = {
 }
 
 DEBUG_MODE = os.getenv("MR_REVIEW_DEBUG", "1") == "1"
+MAX_FILE_CONTEXT_CHARS = int(os.getenv("MR_REVIEW_MAX_FILE_CONTEXT_CHARS", "80000"))
+MAX_BATCH_CONTEXT_CHARS = int(os.getenv("MR_REVIEW_MAX_BATCH_CONTEXT_CHARS", "120000"))
+OPENAI_TIMEOUT_SECONDS = int(os.getenv("MR_REVIEW_OPENAI_TIMEOUT_SECONDS", "90"))
+OPENAI_MAX_RETRIES = int(os.getenv("MR_REVIEW_OPENAI_MAX_RETRIES", "10"))
+OPENAI_RETRY_BASE_SECONDS = int(os.getenv("MR_REVIEW_OPENAI_RETRY_BASE_SECONDS", "15"))
+OPENAI_RETRY_MAX_SECONDS = int(os.getenv("MR_REVIEW_OPENAI_RETRY_MAX_SECONDS", "180"))
+GITLAB_TIMEOUT_SECONDS = int(os.getenv("MR_REVIEW_GITLAB_TIMEOUT_SECONDS", "30"))
+FILE_429_RETRIES = int(os.getenv("MR_REVIEW_FILE_429_RETRIES", "15"))
+FILE_429_WAIT_SECONDS = int(os.getenv("MR_REVIEW_FILE_429_WAIT_SECONDS", "60"))
+FILE_429_WAIT_MAX_SECONDS = int(os.getenv("MR_REVIEW_FILE_429_WAIT_MAX_SECONDS", "600"))
 
 def debug_log(message):
     if DEBUG_MODE:
@@ -22,6 +33,42 @@ def debug_log(message):
 
 def format_line_no(line_no):
     return f"{line_no:>6}" if line_no is not None else "  None"
+
+def get_retry_wait_seconds(attempt, response=None, base_seconds=15, max_seconds=180):
+    if response is not None:
+        retry_after = response.headers.get("Retry-After")
+        if retry_after:
+            try:
+                retry_after_s = int(float(retry_after))
+                return max(1, min(max_seconds, retry_after_s))
+            except ValueError:
+                pass
+    return min(max_seconds, base_seconds * attempt)
+
+def get_file_content(project_id, file_path, ref):
+    """
+    Busca o conteúdo bruto de um arquivo no GitLab em um commit/ref específico.
+    """
+    encoded_file_path = quote(file_path, safe="")
+    url = f"{GITLAB_API_URL}/projects/{project_id}/repository/files/{encoded_file_path}/raw"
+    resp = requests.get(url, headers=HEADERS, params={"ref": ref}, timeout=GITLAB_TIMEOUT_SECONDS)
+    if resp.status_code != 200:
+        debug_log(
+            f"Falha ao buscar arquivo completo path={file_path} ref={ref} status={resp.status_code}"
+        )
+        return ""
+    return resp.text
+
+def render_file_with_line_numbers(file_text):
+    """
+    Renderiza arquivo completo com numeração de linha para dar contexto à IA.
+    """
+    if not file_text:
+        return ""
+    lines = file_text.splitlines()
+    width = max(4, len(str(len(lines))))
+    rendered = [f"L{str(idx).rjust(width, '0')} | {line}" for idx, line in enumerate(lines, start=1)]
+    return "\n".join(rendered)
 
 def parse_mr_url(url):
     """
@@ -42,77 +89,173 @@ def parse_mr_url(url):
     
     return project_path_encoded, mr_id
 
-def ask_chatgpt(file_diff, observacoes_usuario=""):
-    # Monta o bloco de observações prioritárias do usuário
-    observacoes_block = ""
-    if observacoes_usuario:
-        observacoes_block = (
-            f"\n\n🔴 INSTRUÇÕES PRIORITÁRIAS DO USUÁRIO (SIGA ESTAS ANTES DE TUDO):\n"
-            f"{observacoes_usuario}\n"
-            f"\n"
-        )
-    
-    prompt = (
-        "Você é um revisor de código experiente em projetos Java (Spring Boot) 21 com foco em performance\n"
-        "Analise apenas o que foi alterado no diff abaixo. NÃO faça comentários genéricos ou subjetivos.\n"
-        "Sempre diga o porque da sugestão, o impacto e a solução. Evite sugestões vagas ou genéricas.\n"
-        "Ao comentar sugestão de código, utilize a formatação do gitlab para o gitlab saber que é código Java"
-        "Sempre sugira uso de streams, lambdas, Optional, var, records, pattern matching e outros recursos modernos do Java quando aplicável.\n"
-        "Explique sempre quando usar stream que é por causa da imutabilidade, facilidade de leitura e paralelismo. Explique sempre quando usar Optional que é para evitar NullPointerException e deixar claro que o valor pode ser ausente.\n"
-        "Nao faça Comentários genéricos tipo 'veja se é necessário' ou 'verifique se funciona'\n"
-        "Para cada ponto de melhoria, seja específico: aponte exatamente o trecho, explique o problema REAL e proponha uma solução objetiva.\n"
-        "Sugira template strings ao invés de concatenação de strings, sugira uso de var para variáveis locais quando o tipo é óbvio, sugira uso de records para classes de dados simples, sugira uso de pattern matching para instanceof, sugira uso de Optional para valores que podem ser nulos, sugira uso de streams/lambdas para coleções.\n"
-        "Sugira separar um método grande em métodos menores para melhorar a legibilidade e facilitar testes unitários.\n"
-        "Sugira uso de DTOs para evitar expor entidades diretamente em APIs, e para facilitar a validação e transformação de dados.\n"
-        "Sugira testes unitários para métodos complexos ou com lógica de negócio importante, e explique que isso ajuda a garantir a qualidade do código e facilita futuras refatorações.\n"
-        "Comente se não usar records para classes de dados simples, se não usar pattern matching para instanceof, se não usar var para variáveis locais quando o tipo é óbvio, se não usar Optional para valores que podem ser nulos, se não usar streams/lambdas para coleções.\n"
-        "Comente se houver Bugs ou riscos de erro (NullPointerException, race conditions, etc.)\n"
-        "Comente se houver Violações claras de princípios (SOLID, DDD, padrões do projeto)\n"
-        "Se possível, forneça exemplos curtos de código corrigido.\n"
-        "NÃO faça comentários para adicionar javadocs. Vai contra Clean Code.\n"
-        "Se o código está bom e funcional, NÃO force comentários. Prefira não comentar a fazer sugestões fracas.\n"
-        "O diff abaixo já está numerado. Use exatamente esses números de linha.\n"
-        "Use o número de linha do arquivo NOVO (lado '+' do diff, conforme cabeçalho @@). "
-        "Se a sugestão for sobre linha removida, indique explicitamente: 'Linha X (antiga): ...'.\n"
-        "Para cada sugestão, inclua o trecho exato da linha do diff no formato: Trecho: `...`.\n"
-        "Copie exatamente o conteúdo após o caractere '|' do diff numerado. Não inclua os números.\n"
-        "Se não conseguir indicar o trecho com certeza, não sugira.\n"
-        "Formate o comentário para o GitLab UI com seções claras e código destacado:\n"
+def get_reviewer_rules():
+    return (
+        "Você é um revisor de código experiente em projetos Java (Spring Boot) 21 com foco em performance.\n"
+        "Sempre diga o porquê da sugestão, o impacto e a solução. Evite sugestões vagas.\n"
+        "NÃO faça comentários genéricos e NÃO force comentários quando o código estiver bom.\n"
+        "NÃO sugira terminar com linha em branco como: O arquivo não termina com uma linha em branco."
+        "Comente quando houver bugs/riscos reais, violações claras de princípios, ou melhoria moderna aplicável.\n"
+        "Considere o contexto acumulado de outros arquivos e comentários anteriores nesta conversa.\n"
+        "Evite repetir a mesma sugestão em arquivos diferentes, exceto quando o risco for distinto.\n"
+        "Ao sugerir código, use blocos Markdown com linguagem java.\n"
+        "Formato esperado por sugestão:\n"
+        "Linha X: ...\n"
+        "Trecho: `...`\n"
         "Problema: ...\n"
         "Impacto: ...\n"
         "Sugestão: ...\n"
-        "Exemplo (se houver código):\n"
+        "Exemplo:\n"
         "```java\n"
         "// código aqui\n"
         "```\n"
-        "Todos os títulos de seção devem estar em negrito no formato Markdown, por exemplo: **Problema:**, **Impacto:**, **Sugestão:**, **Exemplo:**\n"
-        "Sempre que houver código, use bloco de código com linguagem `java`. Não use código inline.\n"
-        "Use uma linha em branco entre parágrafos e blocos de código.\n"
-        f"{observacoes_block}"
+        "Todos os títulos em negrito: **Problema:**, **Impacto:**, **Sugestão:**, **Exemplo:**.\n"
+        "Use linha do arquivo NOVO por padrão; para removida, use Linha X (antiga).\n"
+    )
+
+def openai_chat(messages, temperature=0.3):
+    last_error = None
+    last_status = None
+    for attempt in range(1, OPENAI_MAX_RETRIES + 1):
+        try:
+            print(f"🤖 Enviando requisição para IA (tentativa {attempt}/{OPENAI_MAX_RETRIES})...")
+            print("⏳ Aguardando retorno da IA...")
+            response = requests.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {OPENAI_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "gpt-4.1",
+                    "messages": messages,
+                    "temperature": temperature
+                },
+                timeout=OPENAI_TIMEOUT_SECONDS
+            )
+            print(f"✅ Retorno da IA recebido (status {response.status_code}).")
+            if response.status_code in (429, 500, 502, 503, 504):
+                last_status = response.status_code
+                wait_s = get_retry_wait_seconds(
+                    attempt,
+                    response=response,
+                    base_seconds=OPENAI_RETRY_BASE_SECONDS,
+                    max_seconds=OPENAI_RETRY_MAX_SECONDS
+                )
+                debug_log(
+                    f"OpenAI retorno {response.status_code} tentativa {attempt}/{OPENAI_MAX_RETRIES}. "
+                    f"Aguardando {wait_s}s para retry."
+                )
+                time.sleep(wait_s)
+                continue
+            response.raise_for_status()
+            return response.json()["choices"][0]["message"]["content"]
+        except requests.RequestException as exc:
+            last_error = exc
+            wait_s = get_retry_wait_seconds(
+                attempt,
+                response=getattr(exc, "response", None),
+                base_seconds=OPENAI_RETRY_BASE_SECONDS,
+                max_seconds=OPENAI_RETRY_MAX_SECONDS
+            )
+            debug_log(
+                f"Falha OpenAI tentativa {attempt}/{OPENAI_MAX_RETRIES}: {exc}. Retry em {wait_s}s."
+            )
+            time.sleep(wait_s)
+    if last_error is not None:
+        raise last_error
+    raise requests.HTTPError(f"OpenAI falhou após retries. Último status: {last_status}")
+
+def build_file_context_map(project_id, changes, head_sha):
+    context_map = {}
+    for change in changes:
+        if change.get("deleted_file", False):
+            continue
+        file_content = get_file_content(project_id, change["new_path"], head_sha)
+        rendered = render_file_with_line_numbers(file_content)
+        if rendered and len(rendered) > MAX_FILE_CONTEXT_CHARS:
+            rendered = rendered[:MAX_FILE_CONTEXT_CHARS] + "\n...[arquivo truncado por limite de contexto]..."
+        context_map[change["new_path"]] = rendered
+    return context_map
+
+def build_context_batches(file_context_map):
+    batches = []
+    current = []
+    current_size = 0
+    for file_path, content in file_context_map.items():
+        if not content:
+            continue
+        chunk = f"### Arquivo: {file_path}\n{content}\n"
+        if current and current_size + len(chunk) > MAX_BATCH_CONTEXT_CHARS:
+            batches.append("\n".join(current))
+            current = [chunk]
+            current_size = len(chunk)
+        else:
+            current.append(chunk)
+            current_size += len(chunk)
+    if current:
+        batches.append("\n".join(current))
+    return batches
+
+def create_review_session(observacoes_usuario=""):
+    base_prompt = get_reviewer_rules()
+    if observacoes_usuario:
+        base_prompt += f"\nINSTRUÇÕES PRIORITÁRIAS DO USUÁRIO:\n{observacoes_usuario}\n"
+    return [
+        {"role": "system", "content": "Você é um revisor de código experiente, direto, objetivo e detalhista."},
+        {"role": "user", "content": base_prompt}
+    ]
+
+def prime_session_with_context(review_messages, file_context_map):
+    batches = build_context_batches(file_context_map)
+    if not batches:
+        return
+    print(f"🧠 Preparando contexto global em {len(batches)} lote(s)...")
+    for idx, batch in enumerate(batches, start=1):
+        debug_log(f"Enviando lote de contexto {idx}/{len(batches)} chars={len(batch)}")
+        prompt = (
+            f"LOTE DE CONTEXTO {idx}/{len(batches)}.\n"
+            "Guarde o contexto desses arquivos para próximas análises de diff.\n"
+            "Resuma em no máximo 12 bullets os pontos estruturais importantes (fluxos, validações, contratos, helpers).\n"
+            "Não faça sugestões agora. Apenas memória útil para evitar comentários repetidos/incoerentes.\n\n"
+            f"{batch}"
+        )
+        try:
+            response = openai_chat(review_messages + [{"role": "user", "content": prompt}], temperature=0.2)
+        except requests.RequestException as e:
+            print(f"⚠️ Falha no lote de contexto {idx}/{len(batches)}: {e}")
+            print("⚠️ Continuando sem esse lote de contexto.")
+            continue
+        review_messages.append({
+            "role": "assistant",
+            "content": f"MEMORIA DE CONTEXTO LOTE {idx}/{len(batches)}\n{response}"
+        })
+
+def ask_chatgpt(review_messages, file_path, file_diff, full_file_context=""):
+    full_file_block = ""
+    if full_file_context:
+        full_file_block = (
+            "\n\nCONTEXTO DO ARQUIVO COMPLETO (APENAS PARA ESTE ARQUIVO):\n"
+            "Use esse contexto para precisão, mas comente somente mudanças do diff.\n"
+            f"{full_file_context}\n"
+        )
+    prompt = (
+        f"Agora analise somente o arquivo: {file_path}\n"
+        "Considere memória já acumulada nesta conversa para evitar repetição de sugestões já feitas.\n"
+        "Diff numerado:\n"
         f"{file_diff}\n"
-        "Liste apenas melhorias relevantes. Para cada sugestão, indique o número da linha: Linha X: sugestão."
+        f"{full_file_block}"
+        "Liste apenas melhorias relevantes. Para cada sugestão, indique: Linha X: sugestão."
     )
-    response = requests.post(
-        "https://api.openai.com/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "Content-Type": "application/json"
-        },
-        json={
-            "model": "gpt-4.1",
-            "messages": [
-                {"role": "system", "content": "Você é um revisor de código experiente, direto, objetivo e detalhista."},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.3
-        }
-    )
-    response.raise_for_status()
-    return response.json()["choices"][0]["message"]["content"]
+    user_msg = {"role": "user", "content": prompt}
+    response = openai_chat(review_messages + [user_msg], temperature=0.3)
+    review_messages.append(user_msg)
+    review_messages.append({"role": "assistant", "content": response})
+    return response
 
 def comment_on_mr(project_id, mr_id, old_path, new_path, line, body, diff_refs, line_type="new"):
     url = f"{GITLAB_API_URL}/projects/{project_id}/merge_requests/{mr_id}/discussions"
-    position = {
+    base_position = {
         "position_type": "text",
         "old_path": old_path,
         "new_path": new_path,
@@ -120,17 +263,48 @@ def comment_on_mr(project_id, mr_id, old_path, new_path, line, body, diff_refs, 
         "start_sha": diff_refs["start_sha"],
         "head_sha": diff_refs["head_sha"]
     }
+    line_pairs = diff_refs.get("line_pairs", {})
+    new_to_old = line_pairs.get("new_to_old", {})
+    old_to_new = line_pairs.get("old_to_new", {})
+
+    attempts = []
     if line_type == "old":
+        position = dict(base_position)
         position["old_line"] = line
+        attempts.append(position)
+        paired_new = old_to_new.get(line)
+        if paired_new is not None:
+            position_ctx = dict(position)
+            position_ctx["new_line"] = paired_new
+            attempts.append(position_ctx)
     else:
+        position = dict(base_position)
         position["new_line"] = line
-    data = {"body": body, "position": position}
-    debug_log(f"Enviando comentário: {data}")
-    resp = requests.post(url, headers=HEADERS, json=data)
-    if resp.status_code != 201:
+        attempts.append(position)
+        paired_old = new_to_old.get(line)
+        if paired_old is not None:
+            position_ctx = dict(position)
+            position_ctx["old_line"] = paired_old
+            attempts.append(position_ctx)
+
+    last_resp = None
+    for idx, position in enumerate(attempts, start=1):
+        data = {"body": body, "position": position}
+        debug_log(f"Enviando comentário tentativa {idx}/{len(attempts)}: {data}")
+        resp = requests.post(url, headers=HEADERS, json=data, timeout=GITLAB_TIMEOUT_SECONDS)
+        last_resp = resp
+        if resp.status_code == 201:
+            return resp.json()
+        if resp.status_code == 400 and "line_code" in resp.text and idx < len(attempts):
+            debug_log("GitLab retornou line_code inválido. Tentando fallback de posição com linha pareada.")
+            continue
         print(f"Resposta da API: {resp.text}")
-    resp.raise_for_status()
-    return resp.json()
+        resp.raise_for_status()
+
+    if last_resp is not None:
+        print(f"Resposta da API: {last_resp.text}")
+        last_resp.raise_for_status()
+    raise RuntimeError("Falha ao enviar comentário para o GitLab.")
 
 def build_full_diff(change):
     return (
@@ -201,6 +375,21 @@ def get_line_maps(diff_text):
                     )
     debug_log(f"Mapas de linha montados: new={len(new_lines)} old={len(old_lines)}")
     return new_lines, old_lines
+
+def get_line_pair_maps(diff_text):
+    """
+    Mapeia linhas de contexto do diff (new <-> old), útil para montar position completo no GitLab.
+    """
+    patch = PatchSet(diff_text)
+    new_to_old = {}
+    old_to_new = {}
+    for patched_file in patch:
+        for hunk in patched_file:
+            for line in hunk:
+                if line.is_context and line.target_line_no is not None and line.source_line_no is not None:
+                    new_to_old[line.target_line_no] = line.source_line_no
+                    old_to_new[line.source_line_no] = line.target_line_no
+    return new_to_old, old_to_new
 
 def normalize_text(text):
     return " ".join(text.split())
@@ -442,13 +631,16 @@ def main():
     print(f"\n🔍 Iniciando análise do Merge Request {MR_ID}...\n")
 
     url = f"{GITLAB_API_URL}/projects/{PROJECT_ID}/merge_requests/{MR_ID}/changes"
-    resp = requests.get(url, headers=HEADERS)
+    resp = requests.get(url, headers=HEADERS, timeout=GITLAB_TIMEOUT_SECONDS)
     resp.raise_for_status()
     mr_data = resp.json()
     changes = mr_data["changes"]
     diff_refs = mr_data["diff_refs"]
 
     print(f"📂 {len(changes)} arquivos encontrados para análise.\n")
+    file_context_map = build_file_context_map(PROJECT_ID, changes, diff_refs["head_sha"])
+    review_messages = create_review_session(observacoes)
+    prime_session_with_context(review_messages, file_context_map)
 
     total_sugestoes = 0
     total_comentarios = 0
@@ -463,10 +655,40 @@ def main():
 
         full_diff = build_full_diff(change)
         new_line_map, old_line_map = get_line_maps(full_diff)
+        new_to_old, old_to_new = get_line_pair_maps(full_diff)
+        diff_refs_for_file = dict(diff_refs)
+        diff_refs_for_file["line_pairs"] = {
+            "new_to_old": new_to_old,
+            "old_to_new": old_to_new
+        }
 
         diff_for_ai = render_diff_with_line_numbers(full_diff)
         debug_log(f"Diff numerado gerado com {len(diff_for_ai.splitlines())} linhas")
-        analysis = ask_chatgpt(diff_for_ai, observacoes)
+        full_file_context = file_context_map.get(change["new_path"], "")
+        debug_log(
+            f"Contexto de arquivo recuperado para IA: lines={len(full_file_context.splitlines()) if full_file_context else 0}"
+        )
+        analysis = None
+        for file_attempt in range(1, FILE_429_RETRIES + 1):
+            try:
+                analysis = ask_chatgpt(review_messages, file_path, diff_for_ai, full_file_context)
+                break
+            except requests.RequestException as e:
+                status_code = getattr(getattr(e, "response", None), "status_code", None)
+                is_rate_limit = status_code == 429 or "429" in str(e)
+                if is_rate_limit and file_attempt < FILE_429_RETRIES:
+                    wait_s = min(FILE_429_WAIT_MAX_SECONDS, FILE_429_WAIT_SECONDS * file_attempt)
+                    print(
+                        f"   ⚠️ OpenAI retornou 429 para {file_path}. "
+                        f"Nova tentativa em {wait_s}s ({file_attempt}/{FILE_429_RETRIES})..."
+                    )
+                    time.sleep(wait_s)
+                    continue
+                print(f"   ⚠️ Erro ao consultar IA para {file_path}: {e}")
+                print("   ⚠️ Arquivo ignorado nesta execução.\n")
+                break
+        if analysis is None:
+            continue
         debug_log(f"Resposta IA recebida com {len(analysis.splitlines())} linhas")
         print(f"   🧠 Sugestões geradas pela IA para `{file_path}`:\n")
 
@@ -524,7 +746,7 @@ def main():
                             f"Comentário mapeado de linha solicitada={line_number} para linha final="
                             f"{target_line_type}:{target_line}"
                         )
-                        comment_on_mr(PROJECT_ID, MR_ID, change["old_path"], change["new_path"], target_line, suggestion_block, diff_refs, line_type=target_line_type)
+                        comment_on_mr(PROJECT_ID, MR_ID, change["old_path"], change["new_path"], target_line, suggestion_block, diff_refs_for_file, line_type=target_line_type)
                         comentarios_postados += 1
                     else:
                         # Só acontece se não houver nenhuma linha no diff.

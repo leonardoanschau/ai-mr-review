@@ -10,7 +10,7 @@ GITLAB_API_URL = "http://gitlab.dimed.com.br/api/v4"
 # Parâmetros padrão (podem ser sobrescritos via environment variables)
 DEFAULT_GROUP = os.getenv("GITLAB_DEFAULT_GROUP", "grupopanvel/varejo/crm")
 DEFAULT_BOARD_ID = os.getenv("GITLAB_DEFAULT_BOARD", "747")
-DEFAULT_BACKLOG_LABEL = os.getenv("GITLAB_BACKLOG_LABEL", "backlog")
+DEFAULT_BACKLOG_LABEL = os.getenv("GITLAB_BACKLOG_LABEL", "Grupo Panvel :: Backlog")
 DEFAULT_ASSIGNEE = os.getenv("GITLAB_DEFAULT_ASSIGNEE", "lanschau")
 
 HEADERS = {
@@ -107,9 +107,9 @@ def get_user_id(username):
     
     return users[0]["id"]
 
-def get_project_from_group(group_path):
+def get_projects_from_group(group_path):
     """
-    Obtém o primeiro projeto do grupo ou retorna o ID do grupo se não houver projetos.
+    Lista todos os projetos do grupo.
     No GitLab, issues são criadas em projetos, não em grupos diretamente.
     """
     from urllib.parse import quote
@@ -117,7 +117,7 @@ def get_project_from_group(group_path):
     encoded_group = quote(group_path, safe='')
     url = f"{GITLAB_API_URL}/groups/{encoded_group}/projects"
     
-    resp = requests.get(url, headers=HEADERS, params={"per_page": 1}, timeout=30)
+    resp = requests.get(url, headers=HEADERS, params={"per_page": 100}, timeout=30)
     resp.raise_for_status()
     projects = resp.json()
     
@@ -127,7 +127,7 @@ def get_project_from_group(group_path):
             f"Issues devem ser criadas em projetos específicos."
         )
     
-    return projects[0]["id"]
+    return projects
 
 def create_issue(project_id, title, description, assignee_id, labels):
     """
@@ -224,10 +224,33 @@ def main():
         assignee_id = get_user_id(assignee)
         print(f"   ✅ Usuário encontrado: ID {assignee_id}")
         
-        # Buscar projeto do grupo
-        print(f"\n🔍 Buscando projeto no grupo '{group}'...")
-        project_id = get_project_from_group(group)
-        print(f"   ✅ Projeto encontrado: ID {project_id}")
+        # Buscar projetos do grupo
+        print(f"\n🔍 Buscando projetos no grupo '{group}'...")
+        projects = get_projects_from_group(group)
+        print(f"   ✅ {len(projects)} projeto(s) encontrado(s)\n")
+        
+        # Listar projetos para escolha
+        print("Projetos disponíveis:")
+        for idx, proj in enumerate(projects, 1):
+            print(f"   {idx}. {proj['name']} ({proj['path']})")
+        
+        # Escolher projeto
+        if len(projects) == 1:
+            project_id = projects[0]["id"]
+            print(f"\n   ℹ️  Usando único projeto: {projects[0]['name']}")
+        else:
+            while True:
+                escolha = input(f"\n   Escolha o projeto (1-{len(projects)}): ").strip()
+                try:
+                    idx = int(escolha) - 1
+                    if 0 <= idx < len(projects):
+                        project_id = projects[idx]["id"]
+                        print(f"   ✅ Projeto selecionado: {projects[idx]['name']}")
+                        break
+                    else:
+                        print(f"   ⚠️ Escolha um número entre 1 e {len(projects)}")
+                except ValueError:
+                    print("   ⚠️ Digite um número válido")
         
         # Criar issue
         labels = [backlog_label]

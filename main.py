@@ -17,15 +17,24 @@ HEADERS = {
 
 DEBUG_MODE = os.getenv("MR_REVIEW_DEBUG", "1") == "1"
 MAX_FILE_CONTEXT_CHARS = int(os.getenv("MR_REVIEW_MAX_FILE_CONTEXT_CHARS", "80000"))
-MAX_BATCH_CONTEXT_CHARS = int(os.getenv("MR_REVIEW_MAX_BATCH_CONTEXT_CHARS", "120000"))
-OPENAI_TIMEOUT_SECONDS = int(os.getenv("MR_REVIEW_OPENAI_TIMEOUT_SECONDS", "90"))
-OPENAI_MAX_RETRIES = int(os.getenv("MR_REVIEW_OPENAI_MAX_RETRIES", "10"))
-OPENAI_RETRY_BASE_SECONDS = int(os.getenv("MR_REVIEW_OPENAI_RETRY_BASE_SECONDS", "15"))
-OPENAI_RETRY_MAX_SECONDS = int(os.getenv("MR_REVIEW_OPENAI_RETRY_MAX_SECONDS", "180"))
+OPENAI_TIMEOUT_SECONDS = int(os.getenv("MR_REVIEW_OPENAI_TIMEOUT_SECONDS", "120"))
+OPENAI_MAX_RETRIES = int(os.getenv("MR_REVIEW_OPENAI_MAX_RETRIES", "3"))  # Reduzido para 3
+OPENAI_RETRY_WAIT_SECONDS = int(os.getenv("MR_REVIEW_OPENAI_RETRY_WAIT_SECONDS", "30"))  # Espera fixa de 30s
 GITLAB_TIMEOUT_SECONDS = int(os.getenv("MR_REVIEW_GITLAB_TIMEOUT_SECONDS", "30"))
-FILE_429_RETRIES = int(os.getenv("MR_REVIEW_FILE_429_RETRIES", "15"))
-FILE_429_WAIT_SECONDS = int(os.getenv("MR_REVIEW_FILE_429_WAIT_SECONDS", "60"))
-FILE_429_WAIT_MAX_SECONDS = int(os.getenv("MR_REVIEW_FILE_429_WAIT_MAX_SECONDS", "600"))
+REVIEW_MODE = os.getenv("MR_REVIEW_MODE", "balanced")  # strict, balanced, lenient
+MIN_DIFF_SIZE_TO_REVIEW = int(os.getenv("MR_REVIEW_MIN_DIFF_SIZE", "50"))  # Pular diffs muito pequenos
+DELAY_BETWEEN_CALLS = float(os.getenv("MR_REVIEW_DELAY_SECONDS", "3.0"))  # Delay entre chamadas
+
+# Padrões de arquivos que devem ser ignorados na análise
+SKIP_FILES_PATTERNS = [
+    r'package-lock\.json$',
+    r'yarn\.lock$',
+    r'pom\.xml\.versionsBackup$',
+    r'\.min\.js$',
+    r'\.map$',
+    r'-lock\.json$',
+    r'\.generated\.',
+]
 
 def debug_log(message):
     if DEBUG_MODE:
@@ -89,37 +98,139 @@ def parse_mr_url(url):
     
     return project_path_encoded, mr_id
 
+def should_skip_file(file_path):
+    """Verifica se arquivo deve ser pulado na análise."""
+    for pattern in SKIP_FILES_PATTERNS:
+        if re.search(pattern, file_path):
+            return True
+    return False
+
+def should_skip_by_size(change):
+    """Verifica se mudança é muito pequena para revisar."""
+    diff_size = len(change.get("diff", ""))
+    return diff_size < MIN_DIFF_SIZE_TO_REVIEW
+
+def get_mr_metadata(project_id, mr_id):
+    """Busca título e descrição do MR para contextualizar a revisão."""
+    url = f"{GITLAB_API_URL}/projects/{project_id}/merge_requests/{mr_id}"
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=GITLAB_TIMEOUT_SECONDS)
+        resp.raise_for_status()
+        data = resp.json()
+        return {
+            "title": data.get("title", ""),
+            "description": data.get("description", ""),
+            "labels": data.get("labels", [])
+        }
+    except Exception as e:
+        debug_log(f"Falha ao buscar metadata do MR: {e}")
+        return {"title": "", "description": "", "labels": []}
+
+def get_issue_metadata(project_id, issue_id):
+    """Busca título e descrição da issue/história de usuário."""
+    url = f"{GITLAB_API_URL}/projects/{project_id}/issues/{issue_id}"
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=GITLAB_TIMEOUT_SECONDS)
+        resp.raise_for_status()
+        data = resp.json()
+        return {
+            "title": data.get("title", ""),
+            "description": data.get("description", ""),
+            "labels": data.get("labels", []),
+            "state": data.get("state", ""),
+            "iid": data.get("iid", "")
+        }
+    except Exception as e:
+        debug_log(f"Falha ao buscar metadata da issue: {e}")
+        return None
+
+def parse_issue_reference(issue_ref, project_path):
+    """Extrai issue_id de uma URL completa ou referência simples (#123 ou 123)."""
+    # Tenta match de URL completa
+    url_match = re.search(r'https?://[^/]+/(.+?)/-/issues/(\d+)', issue_ref)
+    if url_match:
+        issue_project = quote(url_match.group(1), safe='')
+        issue_id = url_match.group(2)
+        return issue_project, issue_id
+    
+    # Tenta match de referência simples (#123 ou 123)
+    simple_match = re.search(r'#?(\d+)', issue_ref)
+    if simple_match:
+        return project_path, simple_match.group(1)
+    
+    return None, None
+
+def get_file_specific_rules(file_path):
+    """Retorna regras específicas por tipo de arquivo."""
+    if file_path.endswith("Test.java") or "/test/" in file_path:
+        return "\n🧪 ARQUIVO DE TESTE: Foque em cobertura adequada, assertions claros e específicos, nomes descritivos de testes."
+    elif file_path.endswith("Controller.java"):
+        return "\n🌐 CONTROLLER: Foque em validação de entrada, status HTTP corretos, uso adequado de DTOs, documentação de API."
+    elif file_path.endswith("Service.java"):
+        return "\n⚙️ SERVICE: Foque em lógica de negócio, transações adequadas, tratamento de exceções, separação de responsabilidades."
+    elif file_path.endswith("Repository.java"):
+        return "\n💾 REPOSITORY: Foque em queries eficientes, uso de índices, prevenção de N+1 queries, paginação."
+    elif file_path.endswith(".yml") or file_path.endswith(".yaml"):
+        return "\n⚙️ CONFIG: Foque em secrets expostos (senhas, tokens), valores default inadequados para produção."
+    elif file_path.endswith(".sql"):
+        return "\n🗄️ SQL: Foque em performance de queries, uso de índices, injeção SQL, transações."
+    return ""
+
 def get_reviewer_rules():
-    return (
-        "Você é um revisor de código experiente em projetos Java (Spring Boot) 21 com foco em performance.\n"
-        "Sempre diga o porquê da sugestão, o impacto e a solução. Evite sugestões vagas.\n"
-        "NÃO faça comentários genéricos e NÃO force comentários quando o código estiver bom.\n"
-        "NÃO sugira terminar com linha em branco como: O arquivo não termina com uma linha em branco."
-        "Comente quando houver bugs/riscos reais, violações claras de princípios, ou melhoria moderna aplicável.\n"
-        "Considere o contexto acumulado de outros arquivos e comentários anteriores nesta conversa.\n"
-        "Evite repetir a mesma sugestão em arquivos diferentes, exceto quando o risco for distinto.\n"
-        "Ao sugerir código, use blocos Markdown com linguagem java.\n"
-        "Formato esperado por sugestão:\n"
-        "Linha X: ...\n"
-        "Trecho: `...`\n"
-        "Problema: ...\n"
-        "Impacto: ...\n"
-        "Sugestão: ...\n"
-        "Exemplo:\n"
+    base_rules = (
+        "Você é um revisor de código Java/Spring Boot experiente.\n\n"
+        
+        "🎯 FOQUE APENAS EM:\n"
+        "1. Bugs reais (NullPointerException, race conditions, memory leaks, lógica incorreta)\n"
+        "2. Vulnerabilidades de segurança (SQL injection, XSS, secrets expostos, autenticação/autorização)\n"
+        "3. Problemas de performance críticos (N+1 queries, loops O(n²) ou pior, recursos não liberados)\n"
+        "4. Violações de SOLID quando impactam manutenibilidade de forma significativa\n"
+        "5. Falta de tratamento de erros em operações críticas (I/O, banco de dados, APIs externas)\n"
+        "6. Problemas de concorrência (shared mutable state, ausência de sincronização necessária)\n\n"
+        
+        "❌ NÃO COMENTE:\n"
+        "- Estilo/formatação (espaços, linhas em branco, ordem de imports)\n"
+        "- Código que está correto mas poderia ser 'mais elegante'\n"
+        "- Sugestões genéricas sem contexto específico do problema\n"
+        "- Melhorias que não trazem benefício mensurável\n"
+        "- Padrões já estabelecidos e consistentes no projeto\n"
+        "- Comentários sobre arquivos terminarem com linha em branco\n"
+        "- Refatorações que não resolvem problema concreto\n\n"
+        
+        "📝 FORMATO OBRIGATÓRIO POR SUGESTÃO:\n"
+        "Linha X: [título curto e específico]\n"
+        "Trecho: `código específico que tem problema`\n"
+        "**Problema:** [o que está errado e por quê - seja específico]\n"
+        "**Impacto:** [consequência real - crash, data loss, vazamento, lentidão mensurável, vulnerabilidade]\n"
+        "**Sugestão:** [como corrigir - passo a passo se necessário]\n"
+        "**Exemplo:**\n"
         "```java\n"
-        "// código aqui\n"
-        "```\n"
-        "Todos os títulos em negrito: **Problema:**, **Impacto:**, **Sugestão:**, **Exemplo:**.\n"
-        "Use linha do arquivo NOVO por padrão; para removida, use Linha X (antiga).\n"
+        "// código corrigido com comentários explicativos\n"
+        "```\n\n"
+        
+        "💡 PRINCÍPIOS:\n"
+        "- Seja específico: cite linha exata, método, variável, trecho de código\n"
+        "- Seja objetivo: explique o benefício concreto e mensurável\n"
+        "- Seja consistente: não repita sugestões já feitas em arquivos anteriores\n"
+        "- Considere o contexto: analise relação com outros arquivos da sessão\n"
+        "- Quando em dúvida sobre a relevância, NÃO comente\n"
+        "- Use linha do arquivo NOVO por padrão; para linha removida, use 'Linha X (antiga)'\n\n"
     )
+    
+    if REVIEW_MODE == "strict":
+        base_rules += "⚡ MODO RIGOROSO: Seja rigoroso e comente qualquer desvio de boas práticas estabelecidas.\n"
+    elif REVIEW_MODE == "lenient":
+        base_rules += "⚡ MODO PERMISSIVO: Seja permissivo e comente apenas bugs críticos e vulnerabilidades de segurança.\n"
+    else:  # balanced
+        base_rules += "⚡ MODO EQUILIBRADO: Seja equilibrado e comente problemas reais com impacto mensurável.\n"
+    
+    return base_rules
 
 def openai_chat(messages, temperature=0.3):
-    last_error = None
-    last_status = None
+    """Chama OpenAI com retry simples (máximo 3 tentativas)"""
     for attempt in range(1, OPENAI_MAX_RETRIES + 1):
         try:
-            print(f"🤖 Enviando requisição para IA (tentativa {attempt}/{OPENAI_MAX_RETRIES})...")
-            print("⏳ Aguardando retorno da IA...")
+            print(f"🤖 Chamando OpenAI (tentativa {attempt}/{OPENAI_MAX_RETRIES})...")
             response = requests.post(
                 "https://api.openai.com/v1/chat/completions",
                 headers={
@@ -127,44 +238,41 @@ def openai_chat(messages, temperature=0.3):
                     "Content-Type": "application/json"
                 },
                 json={
-                    "model": "gpt-4.1",
+                    "model": "gpt-4o",
                     "messages": messages,
                     "temperature": temperature
                 },
                 timeout=OPENAI_TIMEOUT_SECONDS
             )
-            print(f"✅ Retorno da IA recebido (status {response.status_code}).")
-            if response.status_code in (429, 500, 502, 503, 504):
-                last_status = response.status_code
-                wait_s = get_retry_wait_seconds(
-                    attempt,
-                    response=response,
-                    base_seconds=OPENAI_RETRY_BASE_SECONDS,
-                    max_seconds=OPENAI_RETRY_MAX_SECONDS
-                )
-                debug_log(
-                    f"OpenAI retorno {response.status_code} tentativa {attempt}/{OPENAI_MAX_RETRIES}. "
-                    f"Aguardando {wait_s}s para retry."
-                )
-                time.sleep(wait_s)
+            
+            if response.status_code == 200:
+                print("✅ Resposta recebida")
+                return response.json()["choices"][0]["message"]["content"]
+            
+            # Rate limit - aguarda e tenta novamente
+            if response.status_code == 429 and attempt < OPENAI_MAX_RETRIES:
+                print(f"⚠️  Rate limit (429). Aguardando {OPENAI_RETRY_WAIT_SECONDS}s...")
+                time.sleep(OPENAI_RETRY_WAIT_SECONDS)
                 continue
+            
+            # Outros erros
+            print(f"❌ Erro {response.status_code}: {response.text[:200]}")
             response.raise_for_status()
-            return response.json()["choices"][0]["message"]["content"]
-        except requests.RequestException as exc:
-            last_error = exc
-            wait_s = get_retry_wait_seconds(
-                attempt,
-                response=getattr(exc, "response", None),
-                base_seconds=OPENAI_RETRY_BASE_SECONDS,
-                max_seconds=OPENAI_RETRY_MAX_SECONDS
-            )
-            debug_log(
-                f"Falha OpenAI tentativa {attempt}/{OPENAI_MAX_RETRIES}: {exc}. Retry em {wait_s}s."
-            )
-            time.sleep(wait_s)
-    if last_error is not None:
-        raise last_error
-    raise requests.HTTPError(f"OpenAI falhou após retries. Último status: {last_status}")
+            
+        except requests.Timeout:
+            print(f"⏱️  Timeout na tentativa {attempt}")
+            if attempt < OPENAI_MAX_RETRIES:
+                time.sleep(OPENAI_RETRY_WAIT_SECONDS)
+            else:
+                raise
+        except requests.RequestException as e:
+            print(f"❌ Erro: {str(e)[:200]}")
+            if attempt < OPENAI_MAX_RETRIES:
+                time.sleep(OPENAI_RETRY_WAIT_SECONDS)
+            else:
+                raise
+    
+    raise RuntimeError(f"❌ Falha após {OPENAI_MAX_RETRIES} tentativas")
 
 def build_file_context_map(project_id, changes, head_sha):
     context_map = {}
@@ -178,82 +286,168 @@ def build_file_context_map(project_id, changes, head_sha):
         context_map[change["new_path"]] = rendered
     return context_map
 
-def build_context_batches(file_context_map):
-    batches = []
-    current = []
-    current_size = 0
-    for file_path, content in file_context_map.items():
-        if not content:
+def detect_duplicate_suggestion(new_suggestion, previous_suggestions, threshold=0.75):
+    """Verifica se sugestão é muito similar a uma já feita."""
+    new_norm = normalize_text(new_suggestion)
+    if len(new_norm) < 20:
+        return False
+    
+    for prev in previous_suggestions:
+        prev_norm = normalize_text(prev)
+        if len(prev_norm) < 20:
             continue
-        chunk = f"### Arquivo: {file_path}\n{content}\n"
-        if current and current_size + len(chunk) > MAX_BATCH_CONTEXT_CHARS:
-            batches.append("\n".join(current))
-            current = [chunk]
-            current_size = len(chunk)
-        else:
-            current.append(chunk)
-            current_size += len(chunk)
-    if current:
-        batches.append("\n".join(current))
-    return batches
+        ratio = SequenceMatcher(None, new_norm, prev_norm).ratio()
+        if ratio > threshold:
+            debug_log(f"Sugestão duplicada detectada (similaridade: {ratio:.2f})")
+            return True
+    return False
 
-def create_review_session(observacoes_usuario=""):
+def prioritize_changes(changes):
+    """Ordena arquivos: primeiro os menores, depois testes, depois configs."""
+    def sort_key(change):
+        path = change["new_path"]
+        diff_size = len(change.get("diff", ""))
+        
+        # Prioridade por tipo (menor número = maior prioridade)
+        if should_skip_file(path):
+            priority = 99  # Último na fila (mas será pulado mesmo)
+        elif "/test/" in path or path.endswith("Test.java"):
+            priority = 2
+        elif path.endswith((".yml", ".yaml", ".properties", ".xml")):
+            priority = 3
+        else:
+            priority = 1
+        
+        return (priority, diff_size)
+    
+    return sorted(changes, key=sort_key)
+
+def validate_suggestion_relevance(suggestion_text, review_messages):
+    """Validação simplificada - sempre aceita sugestões"""
+    return True  # Simplificado - confia na análise inicial
+
+def generate_changes_summary(changes):
+    """Gera resumo executivo das mudanças para contextualizar a IA."""
+    summary_lines = ["📊 RESUMO DAS MUDANÇAS NO MR:"]
+    
+    by_type = {}
+    total_additions = 0
+    total_deletions = 0
+    
+    for change in changes:
+        if should_skip_file(change["new_path"]):
+            continue
+        ext = change["new_path"].split(".")[-1] if "." in change["new_path"] else "no-ext"
+        by_type.setdefault(ext, []).append(change["new_path"])
+    
+    for ext, files in sorted(by_type.items(), key=lambda x: len(x[1]), reverse=True):
+        summary_lines.append(f"  - {len(files)} arquivo(s) .{ext}")
+    
+    summary_lines.append(f"\nTotal de arquivos a revisar: {sum(len(f) for f in by_type.values())}")
+    
+    return "\n".join(summary_lines)
+
+def create_review_session(observacoes_usuario="", mr_metadata=None, issue_metadata=None):
     base_prompt = get_reviewer_rules()
+    
+    if issue_metadata:
+        base_prompt += "\n📖 HISTÓRIA DE USUÁRIO / ISSUE:\n"
+        if issue_metadata.get('iid'):
+            base_prompt += f"Issue #{issue_metadata['iid']}\n"
+        if issue_metadata.get('title'):
+            base_prompt += f"Título: {issue_metadata['title']}\n"
+        if issue_metadata.get('description'):
+            desc = issue_metadata['description'][:1000]
+            base_prompt += f"Descrição: {desc}{'...' if len(issue_metadata['description']) > 1000 else ''}\n"
+        if issue_metadata.get('labels'):
+            base_prompt += f"Labels: {', '.join(issue_metadata['labels'])}\n"
+        base_prompt += "\n"
+    
+    if mr_metadata:
+        base_prompt += "\n📋 CONTEXTO DO MERGE REQUEST:\n"
+        if mr_metadata.get('title'):
+            base_prompt += f"Título: {mr_metadata['title']}\n"
+        if mr_metadata.get('description'):
+            desc = mr_metadata['description'][:800]
+            base_prompt += f"Descrição: {desc}{'...' if len(mr_metadata['description']) > 800 else ''}\n"
+        if mr_metadata.get('labels'):
+            base_prompt += f"Labels: {', '.join(mr_metadata['labels'])}\n"
+        base_prompt += "\n"
+    
     if observacoes_usuario:
-        base_prompt += f"\nINSTRUÇÕES PRIORITÁRIAS DO USUÁRIO:\n{observacoes_usuario}\n"
+        base_prompt += f"\n🎯 INSTRUÇÕES PRIORITÁRIAS DO USUÁRIO:\n{observacoes_usuario}\n"
+    
     return [
         {"role": "system", "content": "Você é um revisor de código experiente, direto, objetivo e detalhista."},
         {"role": "user", "content": base_prompt}
     ]
 
-def prime_session_with_context(review_messages, file_context_map):
-    batches = build_context_batches(file_context_map)
-    if not batches:
-        return
-    print(f"🧠 Preparando contexto global em {len(batches)} lote(s)...")
-    for idx, batch in enumerate(batches, start=1):
-        debug_log(f"Enviando lote de contexto {idx}/{len(batches)} chars={len(batch)}")
-        prompt = (
-            f"LOTE DE CONTEXTO {idx}/{len(batches)}.\n"
-            "Guarde o contexto desses arquivos para próximas análises de diff.\n"
-            "Resuma em no máximo 12 bullets os pontos estruturais importantes (fluxos, validações, contratos, helpers).\n"
-            "Não faça sugestões agora. Apenas memória útil para evitar comentários repetidos/incoerentes.\n\n"
-            f"{batch}"
-        )
-        try:
-            response = openai_chat(review_messages + [{"role": "user", "content": prompt}], temperature=0.2)
-        except requests.RequestException as e:
-            print(f"⚠️ Falha no lote de contexto {idx}/{len(batches)}: {e}")
-            print("⚠️ Continuando sem esse lote de contexto.")
-            continue
-        review_messages.append({
-            "role": "assistant",
-            "content": f"MEMORIA DE CONTEXTO LOTE {idx}/{len(batches)}\n{response}"
-        })
-
 def ask_chatgpt(review_messages, file_path, file_diff, full_file_context=""):
+    """Analisa um arquivo e retorna sugestões"""
     full_file_block = ""
     if full_file_context:
-        full_file_block = (
-            "\n\nCONTEXTO DO ARQUIVO COMPLETO (APENAS PARA ESTE ARQUIVO):\n"
-            "Use esse contexto para precisão, mas comente somente mudanças do diff.\n"
-            f"{full_file_context}\n"
-        )
+        # Limita contexto para não sobrecarregar
+        if len(full_file_context) > MAX_FILE_CONTEXT_CHARS:
+            full_file_context = full_file_context[:MAX_FILE_CONTEXT_CHARS] + "\n... (truncado)"
+        full_file_block = f"\n\nContexto do arquivo completo:\n{full_file_context}\n"
+    
     prompt = (
-        f"Agora analise somente o arquivo: {file_path}\n"
-        "Considere memória já acumulada nesta conversa para evitar repetição de sugestões já feitas.\n"
-        "Diff numerado:\n"
-        f"{file_diff}\n"
-        f"{full_file_block}"
-        "Liste apenas melhorias relevantes. Para cada sugestão, indique: Linha X: sugestão."
+        f"Arquivo: {file_path}\n\n"
+        f"Diff:\n{file_diff}\n"
+        f"{full_file_block}\n"
+        "Analise e liste melhorias relevantes. Formato: 'Linha X: sugestão'"
     )
     user_msg = {"role": "user", "content": prompt}
     response = openai_chat(review_messages + [user_msg], temperature=0.3)
-    review_messages.append(user_msg)
-    review_messages.append({"role": "assistant", "content": response})
+    
+    # Delay para evitar rate limit
+    time.sleep(DELAY_BETWEEN_CALLS)
+    
     return response
 
-def comment_on_mr(project_id, mr_id, old_path, new_path, line, body, diff_refs, line_type="new"):
+def get_existing_comments(project_id, mr_id):
+    """
+    Busca todos os comentários/discussions existentes no MR.
+    Retorna um set de tuplas (file_path, line_number) para verificação rápida.
+    """
+    url = f"{GITLAB_API_URL}/projects/{project_id}/merge_requests/{mr_id}/discussions"
+    existing_comments = set()
+    
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=GITLAB_TIMEOUT_SECONDS)
+        if resp.status_code != 200:
+            debug_log(f"⚠️  Não foi possível buscar comentários existentes: {resp.status_code}")
+            return existing_comments
+        
+        discussions = resp.json()
+        for discussion in discussions:
+            notes = discussion.get("notes", [])
+            for note in notes:
+                position = note.get("position")
+                if position:
+                    # Prioriza new_path e new_line (comentários no código novo)
+                    file_path = position.get("new_path") or position.get("old_path")
+                    line_number = position.get("new_line") or position.get("old_line")
+                    
+                    if file_path and line_number:
+                        existing_comments.add((file_path, line_number))
+                        debug_log(f"📌 Comentário existente: {file_path}:{line_number}")
+        
+        print(f"✅ Encontrados {len(existing_comments)} comentários existentes no MR")
+        return existing_comments
+    
+    except Exception as e:
+        debug_log(f"⚠️  Erro ao buscar comentários existentes: {e}")
+        return existing_comments
+
+def comment_on_mr(project_id, mr_id, old_path, new_path, line, body, diff_refs, line_type="new", existing_comments=None):
+    # Verificar se já existe comentário nesta linha
+    if existing_comments is not None:
+        file_to_check = new_path if line_type == "new" else old_path
+        if (file_to_check, line) in existing_comments:
+            print(f"⏭️  Pulando linha {line} em {file_to_check} - comentário já existe")
+            return {"skipped": True, "reason": "duplicate"}
+    
     url = f"{GITLAB_API_URL}/projects/{project_id}/merge_requests/{mr_id}/discussions"
     base_position = {
         "position_type": "text",
@@ -618,6 +812,11 @@ def main():
     # Solicita a URL do MR ao usuário
     mr_url = input("🔗 Cole a URL do Merge Request: ").strip()
 
+    # Solicita referência da issue/história de usuário (opcional)
+    print("\n📖 Issue/História de Usuário relacionada (opcional - pressione Enter para pular):")
+    print("   Exemplos: 'https://gitlab.../issues/123', '#123', ou '123'")
+    issue_ref = input("   Issue: ").strip()
+
     # Solicita observações personalizadas (opcional)
     print("\n📝 Observações personalizadas para o revisor (opcional - pressione Enter para pular):")
     observacoes = input("   Exemplo: 'Foque em performance de queries' ou 'Verifique tratamento de erros': ").strip()
@@ -630,6 +829,37 @@ def main():
 
     print(f"\n🔍 Iniciando análise do Merge Request {MR_ID}...\n")
 
+    # Buscar metadata da issue se fornecida
+    issue_metadata = None
+    if issue_ref:
+        print("📖 Buscando informações da issue...")
+        issue_project_id, issue_id = parse_issue_reference(issue_ref, PROJECT_ID)
+        if issue_id:
+            issue_metadata = get_issue_metadata(issue_project_id, issue_id)
+            if issue_metadata:
+                print(f"   ✅ Issue #{issue_metadata.get('iid', issue_id)}: {issue_metadata.get('title', 'Sem título')}")
+                if issue_metadata.get('labels'):
+                    print(f"   Labels: {', '.join(issue_metadata['labels'])}")
+            else:
+                print(f"   ⚠️ Não foi possível buscar a issue {issue_id}")
+        else:
+            print(f"   ⚠️ Formato de issue inválido: {issue_ref}")
+        print()
+
+    # Buscar metadata do MR
+    print("📋 Buscando informações do MR...")
+    mr_metadata = get_mr_metadata(PROJECT_ID, MR_ID)
+    if mr_metadata.get('title'):
+        print(f"   Título: {mr_metadata['title']}")
+    if mr_metadata.get('labels'):
+        print(f"   Labels: {', '.join(mr_metadata['labels'])}")
+    print()
+
+    # Buscar comentários existentes para evitar duplicação
+    print("📝 Verificando comentários existentes...")
+    existing_comments = get_existing_comments(PROJECT_ID, MR_ID)
+    print()
+
     url = f"{GITLAB_API_URL}/projects/{PROJECT_ID}/merge_requests/{MR_ID}/changes"
     resp = requests.get(url, headers=HEADERS, timeout=GITLAB_TIMEOUT_SECONDS)
     resp.raise_for_status()
@@ -637,17 +867,61 @@ def main():
     changes = mr_data["changes"]
     diff_refs = mr_data["diff_refs"]
 
-    print(f"📂 {len(changes)} arquivos encontrados para análise.\n")
+    # Filtrar arquivos que devem ser ignorados
+    original_count = len(changes)
+    changes = [c for c in changes if not should_skip_file(c["new_path"])]
+    
+    # Filtrar mudanças muito pequenas (economiza chamadas API)
+    changes_before_size_filter = len(changes)
+    changes = [c for c in changes if not should_skip_by_size(c)]
+    
+    skipped_by_pattern = original_count - changes_before_size_filter
+    skipped_by_size = changes_before_size_filter - len(changes)
+    
+    if skipped_by_pattern > 0:
+        print(f"⏭️  {skipped_by_pattern} arquivo(s) ignorado(s) (lock files, generated files, etc.)")
+    if skipped_by_size > 0:
+        print(f"⏭️  {skipped_by_size} arquivo(s) ignorado(s) (mudanças < {MIN_DIFF_SIZE_TO_REVIEW} chars)")
+    print(f"📂 {len(changes)} arquivo(s) selecionado(s) para análise.\n")
+    
+    if len(changes) == 0:
+        print("✨ Nenhum arquivo relevante para revisar!\n")
+        return
+    
+    # Priorizar arquivos por tamanho e tipo
+    changes = prioritize_changes(changes)
+    
+    # Gerar sumário de mudanças
+    changes_summary = generate_changes_summary(changes)
+    print(changes_summary)
+    print()
+    
     file_context_map = build_file_context_map(PROJECT_ID, changes, diff_refs["head_sha"])
-    review_messages = create_review_session(observacoes)
-    prime_session_with_context(review_messages, file_context_map)
+    review_messages = create_review_session(observacoes, mr_metadata, issue_metadata)
+    
+    # Adicionar sumário de mudanças ao contexto
+    review_messages.append({"role": "user", "content": changes_summary})
+    review_messages.append({"role": "assistant", "content": "Resumo registrado. Pronto para análise."})
+    
+    print("✅ Contexto preparado\n")
 
     total_sugestoes = 0
     total_comentarios = 0
-
+    total_duplicadas = 0
+    total_irrelevantes = 0
+    previous_suggestions = []
+    
+    # Processar cada arquivo individualmente (SIMPLIFICADO)
+    print(f"📁 Processando {len(changes)} arquivo(s)...\n")
+    
     for change in changes:
         file_path = change["new_path"]
         print(f"➡️ Analisando arquivo: {file_path}")
+        
+        # Adicionar regras específicas do tipo de arquivo
+        file_specific_rules = get_file_specific_rules(file_path)
+        if file_specific_rules:
+            debug_log(f"Aplicando regras específicas para {file_path}")
         debug_log(
             f"Arquivo atual old_path={change['old_path']} new_path={change['new_path']} "
             f"diff_chars={len(change.get('diff', ''))}"
@@ -668,26 +942,22 @@ def main():
         debug_log(
             f"Contexto de arquivo recuperado para IA: lines={len(full_file_context.splitlines()) if full_file_context else 0}"
         )
-        analysis = None
-        for file_attempt in range(1, FILE_429_RETRIES + 1):
-            try:
-                analysis = ask_chatgpt(review_messages, file_path, diff_for_ai, full_file_context)
-                break
-            except requests.RequestException as e:
-                status_code = getattr(getattr(e, "response", None), "status_code", None)
-                is_rate_limit = status_code == 429 or "429" in str(e)
-                if is_rate_limit and file_attempt < FILE_429_RETRIES:
-                    wait_s = min(FILE_429_WAIT_MAX_SECONDS, FILE_429_WAIT_SECONDS * file_attempt)
-                    print(
-                        f"   ⚠️ OpenAI retornou 429 para {file_path}. "
-                        f"Nova tentativa em {wait_s}s ({file_attempt}/{FILE_429_RETRIES})..."
-                    )
-                    time.sleep(wait_s)
-                    continue
-                print(f"   ⚠️ Erro ao consultar IA para {file_path}: {e}")
-                print("   ⚠️ Arquivo ignorado nesta execução.\n")
-                break
-        if analysis is None:
+        
+        # Adicionar contexto específico do tipo de arquivo ao prompt
+        file_specific_context = get_file_specific_rules(file_path)
+        if file_specific_context:
+            full_file_context = file_specific_context + "\n\n" + full_file_context
+        
+        # Analisar arquivo
+        try:
+            analysis = ask_chatgpt(review_messages, file_path, diff_for_ai, full_file_context)
+        except Exception as e:
+            print(f"   ⚠️  Erro ao analisar {file_path}: {e}")
+            print("   ⏭️  Pulando arquivo...\n")
+            continue
+        
+        if not analysis or not analysis.strip():
+            print(f"   ✅ Nenhuma sugestão para {file_path}\n")
             continue
         debug_log(f"Resposta IA recebida com {len(analysis.splitlines())} linhas")
         print(f"   🧠 Sugestões geradas pela IA para `{file_path}`:\n")
@@ -742,12 +1012,41 @@ def main():
                         old_line_map
                     )
                     if ok:
+                        # Verificar se é duplicada
+                        if detect_duplicate_suggestion(suggestion_block, previous_suggestions):
+                            debug_log(f"Sugestão duplicada ignorada para linha {line_number}")
+                            total_duplicadas += 1
+                            continue
+                        
+                        # Validar relevância (se habilitado)
+                        if not validate_suggestion_relevance(suggestion_block, review_messages):
+                            debug_log(f"Sugestão considerada irrelevante para linha {line_number}")
+                            total_irrelevantes += 1
+                            continue
+                        
                         debug_log(
                             f"Comentário mapeado de linha solicitada={line_number} para linha final="
                             f"{target_line_type}:{target_line}"
                         )
-                        comment_on_mr(PROJECT_ID, MR_ID, change["old_path"], change["new_path"], target_line, suggestion_block, diff_refs_for_file, line_type=target_line_type)
-                        comentarios_postados += 1
+                        comment_result = comment_on_mr(
+                            PROJECT_ID, MR_ID, 
+                            change["old_path"], 
+                            change["new_path"], 
+                            target_line, 
+                            suggestion_block, 
+                            diff_refs_for_file, 
+                            line_type=target_line_type,
+                            existing_comments=existing_comments
+                        )
+                        
+                        if comment_result.get("skipped"):
+                            debug_log(f"Comentário duplicado ignorado na linha {target_line}")
+                        else:
+                            # Adicionar ao cache para evitar duplicação na mesma execução
+                            file_to_cache = change["new_path"] if target_line_type == "new" else change["old_path"]
+                            existing_comments.add((file_to_cache, target_line))
+                            previous_suggestions.append(suggestion_block)
+                            comentarios_postados += 1
                     else:
                         # Só acontece se não houver nenhuma linha no diff.
                         print(f"   ⚠️ Não foi possível localizar uma linha válida no diff para a Linha {line_number}.")
@@ -764,7 +1063,12 @@ def main():
 
     print("\n✨ Análise concluída!")
     print(f"📊 Total de sugestões geradas: {total_sugestoes}")
-    print(f"💬 Total de comentários postados: {total_comentarios}\n")
+    print(f"💬 Total de comentários postados: {total_comentarios}")
+    if total_duplicadas > 0:
+        print(f"🔄 Sugestões duplicadas filtradas: {total_duplicadas}")
+    if total_irrelevantes > 0:
+        print(f"⚖️  Sugestões irrelevantes filtradas: {total_irrelevantes}")
+    print()
 
 if __name__ == "__main__":
     main()

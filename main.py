@@ -383,26 +383,33 @@ def create_review_session(observacoes_usuario="", mr_metadata=None, issue_metada
     ]
 
 def ask_chatgpt(review_messages, file_path, file_diff, full_file_context=""):
-    """Analisa um arquivo e retorna sugestões"""
+    """Analisa um arquivo e retorna sugestões com código aplicável"""
     full_file_block = ""
     if full_file_context:
-        # Limita contexto para não sobrecarregar
         if len(full_file_context) > MAX_FILE_CONTEXT_CHARS:
             full_file_context = full_file_context[:MAX_FILE_CONTEXT_CHARS] + "\n... (truncado)"
-        full_file_block = f"\n\nContexto do arquivo completo:\n{full_file_context}\n"
+        full_file_block = f"\n\nContexto do arquivo:\n{full_file_context}\n"
     
     prompt = (
         f"Arquivo: {file_path}\n\n"
         f"Diff:\n{file_diff}\n"
         f"{full_file_block}\n"
-        "Analise e liste melhorias relevantes. Formato: 'Linha X: sugestão'"
+        "Analise e retorne sugestões APLICÁVEIS.\n\n"
+        "FORMATO OBRIGATÓRIO por sugestão:\n"
+        "Linha X: [título breve do problema]\n"
+        "Código atual problemático: [trecho exato que precisa mudar]\n"
+        "Código corrigido: [código corrigido completo]\n"
+        "Motivo: [explicação em 1 frase]\n\n"
+        "IMPORTANTE:\n"
+        "- Retorne APENAS sugestões que você consegue fornecer código corrigido completo\n"
+        "- O 'Código corrigido' deve ser código válido que substitui o problemático\n"
+        "- Seja conciso no motivo (máximo 1-2 linhas)\n"
+        "- Foque em bugs reais, segurança e performance crítica"
     )
     user_msg = {"role": "user", "content": prompt}
     response = openai_chat(review_messages + [user_msg], temperature=0.3)
     
-    # Delay para evitar rate limit
     time.sleep(DELAY_BETWEEN_CALLS)
-    
     return response
 
 def get_existing_comments(project_id, mr_id):
@@ -587,6 +594,47 @@ def get_line_pair_maps(diff_text):
 
 def normalize_text(text):
     return " ".join(text.split())
+
+def extract_code_block(text, marker):
+    """Extrai bloco de código após um marcador."""
+    pattern = re.compile(rf"{marker}:\s*(.+?)(?=\n(?:Código|Motivo):|$)", re.DOTALL | re.IGNORECASE)
+    match = pattern.search(text)
+    if match:
+        return match.group(1).strip()
+    return None
+
+def extract_reason(text):
+    """Extrai o motivo da sugestão."""
+    pattern = re.compile(r"Motivo:\s*(.+?)(?=\n\n|$)", re.DOTALL | re.IGNORECASE)
+    match = pattern.search(text)
+    if match:
+        return match.group(1).strip()
+    return None
+
+def format_gitlab_suggestion(title, codigo_atual, codigo_corrigido, motivo):
+    """Formata sugestão usando sintaxe do GitLab suggestion."""
+    if not codigo_corrigido:
+        # Sem código corrigido = comentário simples
+        parts = [f"**{title}**"]
+        if motivo:
+            parts.append(f"\n{motivo}")
+        return "\n".join(parts)
+    
+    # Com código corrigido = usar suggestion do GitLab
+    parts = [f"**{title}**"]
+    
+    if motivo:
+        parts.append(f"\n{motivo}\n")
+    
+    # Sintaxe do GitLab para suggestion aplicável
+    parts.append("```suggestion")
+    parts.append(codigo_corrigido)
+    parts.append("```")
+    
+    if codigo_atual:
+        parts.append(f"\n<details><summary>Código atual</summary>\n\n```\n{codigo_atual}\n```\n</details>")
+    
+    return "\n".join(parts)
 
 def bold_section_titles(text):
     """
@@ -979,6 +1027,8 @@ def main():
                         line_hint = "new"
                     else:
                         line_hint = None
+                    
+                    # Coletar todas as linhas da sugestão
                     suggestion_lines = []
                     suggestion = line.split(":", 1)[1].strip()
                     if suggestion:
@@ -987,26 +1037,32 @@ def main():
                         if re.search(r"Linha \d+(?:\s*\((?:antiga|antigo|old|nova|novo|new)\))?:", next_line, re.IGNORECASE):
                             break
                         suggestion_lines.append(next_line)
+                    
                     suggestion_text = "\n".join(suggestion_lines).strip()
-                    snippet, suggestion_block = extract_snippet_and_clean_lines(suggestion_lines)
+                    
+                    # Extrair partes da sugestão
+                    codigo_atual = extract_code_block(suggestion_text, "Código atual problemático")
+                    codigo_corrigido = extract_code_block(suggestion_text, "Código corrigido")
+                    motivo = extract_reason(suggestion_text)
+                    
                     debug_log(
                         f"Sugestão parseada linha={line_number} hint={line_hint} "
-                        f"snippet={'SIM' if bool(snippet) else 'NAO'}"
+                        f"tem_codigo_atual={'SIM' if codigo_atual else 'NAO'} "
+                        f"tem_corrigido={'SIM' if codigo_corrigido else 'NAO'}"
                     )
-                    if not suggestion_block:
-                        suggestion_block = suggestion_text
-                    if snippet:
-                        snippet_block = f"Trecho:\n```java\n{snippet}\n```"
-                        if suggestion_block:
-                            suggestion_block = f"{snippet_block}\n\n{suggestion_block}"
-                        else:
-                            suggestion_block = snippet_block
-                    suggestion_block = bold_section_titles(suggestion_block)
+                    
+                    # Montar comentário com GitLab suggestion
+                    suggestion_block = format_gitlab_suggestion(
+                        line.split(":", 1)[1].strip() if ":" in line else "Melhoria sugerida",
+                        codigo_atual,
+                        codigo_corrigido,
+                        motivo
+                    )
 
                     target_line_type, target_line, ok = choose_target_line(
                         line_number,
                         line_hint,
-                        snippet,
+                        codigo_atual,  # Usar código atual para localizar a linha
                         suggestion_text,
                         new_line_map,
                         old_line_map

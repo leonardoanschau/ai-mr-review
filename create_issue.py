@@ -1,6 +1,9 @@
 import requests
 import os
 import json
+import sys
+import argparse
+import re
 
 # Configurações
 GITLAB_TOKEN = os.getenv("GITLAB_TOKEN")
@@ -44,6 +47,12 @@ def generate_issue_content(context):
     """
     Gera título e descrição da issue usando IA baseado no contexto fornecido.
     """
+    # Detecta se há um prefixo solicitado no contexto
+    title_prefix = ""
+    prefix_match = re.search(r'prefixo\s*["\']([^"\']+)["\']', context, re.IGNORECASE)
+    if prefix_match:
+        title_prefix = prefix_match.group(1).strip()
+    
     system_prompt = (
         "Você é um assistente especializado em criar issues técnicas bem estruturadas para GitLab.\n"
         "Seu trabalho é transformar contextos em issues claras, objetivas e bem formatadas.\n"
@@ -59,6 +68,12 @@ def generate_issue_content(context):
     user_prompt = (
         f"Com base no contexto abaixo, crie uma issue técnica:\n\n"
         f"CONTEXTO:\n{context}\n\n"
+    )
+    
+    if title_prefix:
+        user_prompt += f'IMPORTANTE: O título deve começar com o prefixo "{title_prefix}"\n\n'
+    
+    user_prompt += (
         f"Retorne a resposta no seguinte formato JSON:\n"
         f"{{\n"
         f'  "title": "Título da issue aqui",\n'
@@ -155,6 +170,29 @@ def get_projects_from_group(group_path, include_subgroups=True):
     
     return all_projects
 
+def find_project_by_name(project_name, group_path):
+    """
+    Busca um projeto pelo nome dentro do grupo.
+    """
+    projects = get_projects_from_group(group_path, include_subgroups=True)
+    
+    # Busca exata por nome ou path
+    for proj in projects:
+        if proj['name'].lower() == project_name.lower() or proj['path'].lower() == project_name.lower():
+            return proj
+    
+    # Busca parcial (contém)
+    matches = [p for p in projects if project_name.lower() in p['name'].lower() or project_name.lower() in p['path'].lower()]
+    
+    if len(matches) == 1:
+        return matches[0]
+    elif len(matches) > 1:
+        available = ', '.join([p['name'] for p in matches[:5]])
+        raise ValueError(f"Múltiplos projetos encontrados com '{project_name}': {available}...")
+    
+    available = ', '.join([p['name'] for p in projects[:10]])
+    raise ValueError(f"Projeto '{project_name}' não encontrado. Disponíveis: {available}...")
+
 def create_issue(project_id, title, description, assignee_id, labels):
     """
     Cria uma issue no GitLab.
@@ -179,6 +217,86 @@ def create_issue(project_id, title, description, assignee_id, labels):
     return resp.json()
 
 def main():
+    parser = argparse.ArgumentParser(description='Cria issues no GitLab com IA')
+    parser.add_argument('--project', '-p', help='Nome do projeto GitLab')
+    parser.add_argument('--context', '-c', help='Contexto da issue')
+    parser.add_argument('--assignee', '-a', default=DEFAULT_ASSIGNEE, help=f'Username do assignee (padrão: {DEFAULT_ASSIGNEE})')
+    parser.add_argument('--labels', '-l', nargs='+', help='Labels da issue')
+    parser.add_argument('--group', '-g', default=DEFAULT_GROUP, help=f'Grupo GitLab (padrão: {DEFAULT_GROUP})')
+    parser.add_argument('--interactive', '-i', action='store_true', help='Modo interativo')
+    parser.add_argument('--list-projects', action='store_true', help='Lista projetos disponíveis e sai')
+    
+    args = parser.parse_args()
+    
+    # Modo: listar projetos
+    if args.list_projects:
+        try:
+            print(f"\n📁 Projetos no grupo '{args.group}':\n")
+            projects = get_projects_from_group(args.group, include_subgroups=True)
+            for proj in projects:
+                path_display = proj.get('path_with_namespace', proj['path'])
+                print(f"  • {proj['name']} ({path_display})")
+            print(f"\n✅ Total: {len(projects)} projetos")
+            return
+        except Exception as e:
+            print(f"❌ Erro: {e}")
+            sys.exit(1)
+    
+    # Modo interativo ou modo CLI
+    if args.interactive or not (args.project and args.context):
+        main_interactive()
+        return
+    
+    # Modo CLI (não interativo) - ideal para MCP
+    try:
+        group = args.group
+        project_name = args.project
+        context = args.context
+        assignee = args.assignee
+        labels = args.labels if args.labels else DEFAULT_LABELS
+        
+        print(f"🎯 Criando issue no projeto '{project_name}'...")
+        
+        # Gerar título e descrição com IA
+        print("🤖 Gerando título e descrição com IA...")
+        title, description = generate_issue_content(context)
+        
+        print(f"\n📌 Título: {title}")
+        print(f"📄 Descrição: {description[:100]}...")
+        
+        # Buscar projeto
+        print(f"\n🔍 Buscando projeto '{project_name}' no grupo '{group}'...")
+        project = find_project_by_name(project_name, group)
+        print(f"   ✅ Projeto encontrado: {project['name']} (ID: {project['id']})")
+        
+        # Buscar ID do usuário
+        print(f"\n🔍 Buscando ID do usuário '{assignee}'...")
+        assignee_id = get_user_id(assignee)
+        print(f"   ✅ Usuário encontrado: ID {assignee_id}")
+        
+        # Criar issue
+        issue = create_issue(project['id'], title, description, assignee_id, labels)
+        
+        print("\n" + "=" * 70)
+        print("✅ ISSUE CRIADA COM SUCESSO!")
+        print("=" * 70)
+        print(f"🔗 URL: {issue['web_url']}")
+        print(f"🆔 ID: #{issue['iid']}")
+        print(f"📌 Título: {issue['title']}")
+        print(f"🏷️  Labels: {', '.join(labels)}")
+        print("=" * 70)
+        
+    except requests.RequestException as e:
+        print(f"\n❌ Erro na comunicação com GitLab/OpenAI: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"   Status: {e.response.status_code}")
+            print(f"   Resposta: {e.response.text}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n❌ Erro: {e}")
+        sys.exit(1)
+
+def main_interactive():
     print("=" * 70)
     print("🎯 CRIADOR DE ISSUES COM IA")
     print("=" * 70)

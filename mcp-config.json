@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "gitlab-issue-creator": {
+      "command": "/Users/leonardoanschau/Documents/Pessoal/ai-mr-review/.venv/bin/python",
+      "args": [
+        "/Users/leonardoanschau/Documents/Pessoal/ai-mr-review/gitlab_issue_mcp_server.py"
+      ],
+      "env": {
+        "GITLAB_TOKEN": "${GITLAB_TOKEN}",
+        "OPENAI_API_KEY": "${OPENAI_API_KEY}",
+        "GITLAB_API_URL": "http://gitlab.dimed.com.br/api/v4",
+        "GITLAB_DEFAULT_GROUP": "grupopanvel/varejo/crm",
+        "GITLAB_DEFAULT_ASSIGNEE": "lanschau"
+      }
+    }
+  }
+}

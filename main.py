@@ -403,8 +403,14 @@ def ask_chatgpt(review_messages, file_path, file_diff, full_file_context=""):
         "IMPORTANTE:\n"
         "- Retorne APENAS sugestões que você consegue fornecer código corrigido completo\n"
         "- O 'Código corrigido' deve ser código válido que substitui o problemático\n"
+        "- NÃO use marcadores de code block (```java ou ```) no código - escreva APENAS o código puro\n"
         "- Seja conciso no motivo (máximo 1-2 linhas)\n"
-        "- Foque em bugs reais, segurança e performance crítica"
+        "- Foque em bugs reais, segurança e performance crítica\n\n"
+        "EXEMPLO DE RESPOSTA:\n"
+        "Linha 45: Possível NullPointerException\n"
+        "Código atual problemático: user.getName()\n"
+        "Código corrigido: if (user != null) {\n    user.getName();\n}\n"
+        "Motivo: Previne crash se user for null\n"
     )
     user_msg = {"role": "user", "content": prompt}
     response = openai_chat(review_messages + [user_msg], temperature=0.3)
@@ -596,11 +602,16 @@ def normalize_text(text):
     return " ".join(text.split())
 
 def extract_code_block(text, marker):
-    """Extrai bloco de código após um marcador."""
+    """Extrai bloco de código após um marcador e remove markdown de code block."""
     pattern = re.compile(rf"{marker}:\s*(.+?)(?=\n(?:Código|Motivo):|$)", re.DOTALL | re.IGNORECASE)
     match = pattern.search(text)
     if match:
-        return match.group(1).strip()
+        code = match.group(1).strip()
+        # Remove marcadores de code block markdown (```java, ```, etc)
+        code = re.sub(r'^```\w*\n', '', code)  # Remove ```java ou ``` do início
+        code = re.sub(r'\n```$', '', code)     # Remove ``` do final
+        code = code.strip()
+        return code
     return None
 
 def extract_reason(text):

@@ -1,64 +1,289 @@
-# ai-mr-review
+# AI MR Review & GitLab Issue Creator 🤖
 
-## Descrição do Projeto
+Ferramentas de automação para GitLab com integração OpenAI.
 
-O **ai-mr-review** é uma ferramenta automatizada para revisão de código em solicitações de merge (Merge Requests) no GitLab. Ele utiliza a API do OpenAI para fornecer análises detalhadas e sugestões de melhorias com base nas alterações realizadas no código. O foco principal é garantir aderência a boas práticas de desenvolvimento, como Clean Code, DDD, e padrões arquiteturais (Controller, Facade, Service e Repository), além de priorizar performance e simplicidade.
+## 🎯 Ferramentas Disponíveis
 
-## Funcionalidades
+### 1. **MR Review** (`main.py`)
+Revisão automatizada de Merge Requests do GitLab usando IA.
 
-- **Análise de Alterações**: Busca as alterações realizadas em uma Merge Request específica no GitLab.
-- **Revisão Automatizada**: Envia o diff das alterações para o ChatGPT, que retorna sugestões específicas e acionáveis.
-- **Comentários Diretos no GitLab**: Adiciona comentários diretamente nas linhas relevantes do código alterado, com base nas sugestões fornecidas pela IA.
-- **Foco em Boas Práticas**: As análises priorizam performance, clareza, simplicidade e aderência aos padrões do time.
+**Funcionalidades:**
+- Análise automatizada de código em MRs
+- Comentários diretos no GitLab
+- Foco em Clean Code, DDD e boas práticas
+- Sugestões de melhorias específicas por linha
 
-## Tecnologias Utilizadas
+**Uso:**
+```bash
+python main.py
+```
 
-- **Python**: Linguagem principal do projeto.
-- **GitLab API**: Para buscar informações sobre as Merge Requests e adicionar comentários.
-- **OpenAI API**: Para realizar a análise automatizada das alterações no código.
-- **unidiff**: Biblioteca para manipulação de diffs e identificar linhas adicionadas.
+### 2. **GitLab Issue Creator** (`gitlab_issue_mcp_server.py`) ⭐ NOVO
+Servidor MCP para criar issues no GitLab com conteúdo gerado por IA.
 
-## Como Funciona
+**Funcionalidades:**
+- ✨ Cria issues com título e descrição gerados automaticamente pela IA
+- 🔍 Busca inteligente de projetos (incluindo subgrupos)
+- 🏷️ Suporta labels e assignees customizados
+- 🤖 Integração nativa com GitHub Copilot via MCP
 
-1. **Configuração**: O projeto utiliza variáveis de ambiente para configurar os tokens de acesso ao GitLab e OpenAI.
-2. **Busca de Alterações**: As alterações de uma Merge Request são obtidas através da API do GitLab.
-3. **Análise com IA**: O diff das alterações é enviado para o ChatGPT, que retorna sugestões detalhadas.
-4. **Comentários no GitLab**: As sugestões são adicionadas diretamente como comentários na Merge Request.
+**📖 Documentação completa:** [MCP_SERVER_README.md](MCP_SERVER_README.md)
 
-## Pré-requisitos
+**⚙️ Setup para outros usuários:** [SETUP_OUTROS_USUARIOS.md](SETUP_OUTROS_USUARIOS.md)
 
-- Python 3.8 ou superior.
-- Tokens de acesso para as APIs do GitLab e OpenAI configurados nas variáveis de ambiente `GITLAB_TOKEN` e `OPENAI_API_KEY`.
+---
 
-## Como Executar
+## 🚀 Quick Start - Issue Creator (MCP)
 
-1. Clone o repositório:
-    ```bash
-    git clone <URL_DO_REPOSITORIO>
-    cd ai-mr-review
-    ```
+### 1. Instalar Dependências
 
-2. Instale as dependências:
-    ```bash
-    pip install -r requirements.txt
-    ```
+```bash
+pip install -r requirements.txt
+```
 
-3. Configure as variáveis de ambiente:
-    ```bash
-    export GITLAB_TOKEN=<seu_token_gitlab>
-    export OPENAI_API_KEY=<seu_token_openai>
-    ```
+### 2. Configurar Variáveis de Ambiente
 
-4. Execute o script principal:
-    ```bash
-    python main.py
-    ```
+```bash
+export GITLAB_TOKEN="glpat-xxxxx"           # Token GitLab com scope 'api'
+export OPENAI_API_KEY="sk-proj-xxxxx"      # API Key OpenAI
+```
 
-## Contribuição
+### 3. Configurar MCP no VS Code
 
-Contribuições são bem-vindas! Sinta-se à vontade para abrir issues ou enviar pull requests.
+Edite: `~/Library/Application Support/Code/User/mcp.json`
 
-## Licença
+Adicione:
+```json
+{
+  "servers": {
+    "gitlab-issue-creator": {
+      "command": "/caminho/completo/.venv/bin/python",
+      "args": ["/caminho/completo/gitlab_issue_mcp_server.py"],
+      "env": {
+        "GITLAB_TOKEN": "${env:GITLAB_TOKEN}",
+        "OPENAI_API_KEY": "${env:OPENAI_API_KEY}",
+        "GITLAB_API_URL": "http://gitlab.dimed.com.br/api/v4",
+        "GITLAB_DEFAULT_GROUP": "grupopanvel/varejo/crm",
+        "GITLAB_DEFAULT_ASSIGNEE": "seu-username"
+      },
+      "type": "stdio"
+    }
+  }
+}
+```
 
-Este projeto está licenciado sob a [MIT License](LICENSE).
-# ai-mr-review
+### 4. Reiniciar VS Code
+
+### 5. Usar no Copilot Chat! 🎉
+
+```
+@workspace crie uma issue no projeto user-stories sobre implementar autenticação OAuth2
+```
+
+---
+
+## 📦 Estrutura do Projeto
+
+```
+ai-mr-review/
+├── main.py                          # MR Review CLI
+├── gitlab_issue_mcp_server.py       # MCP Server para criar issues
+├── requirements.txt                 # Dependências Python
+├── README.md                        # Este arquivo
+├── MCP_SERVER_README.md            # Documentação completa do MCP
+├── SETUP_OUTROS_USUARIOS.md        # Guia de setup para distribuição
+├── mcp-config.json                 # Exemplo de configuração MCP
+└── test_mcp_server.sh              # Script de testes do MCP
+```
+
+---
+
+## 🛠️ Tools MCP Disponíveis
+
+### 1. `list_gitlab_projects`
+Lista todos os projetos do grupo CRM (incluindo subgrupos).
+
+**Uso no Copilot:**
+```
+@workspace liste os projetos GitLab disponíveis
+```
+
+### 2. `create_gitlab_issue`
+Cria issue no GitLab com conteúdo gerado por IA.
+
+**Parâmetros:**
+- `project_name` (obrigatório): Nome do projeto
+- `context` (obrigatório): Contexto da issue
+- `assignee` (opcional): Username do responsável
+- `labels` (opcional): Array de labels
+
+**Uso no Copilot:**
+```
+@workspace crie uma issue no projeto user-stories sobre:
+
+IMPORTANTE: O título deve começar com "[TD] - "
+
+Implementar cache Redis para queries de produtos.
+```
+
+### 3. `generate_issue_content`
+Gera apenas título e descrição sem criar a issue.
+
+**Uso no Copilot:**
+```
+@workspace gere o conteúdo de uma issue sobre migração PostgreSQL 15
+```
+
+---
+
+## ⚡ Exemplos de Uso
+
+### MR Review
+
+```bash
+# Revisar uma MR específica
+python main.py
+
+# Seguir os prompts:
+# - Project ID: 123
+# - MR IID: 45
+```
+
+### Issue Creator via MCP
+
+```
+@workspace crie uma issue no projeto customer-service:
+
+Implementar validação de CPF com dígito verificador no cadastro. 
+Deve validar formato e calcular dígitos verificadores.
+Adicionar testes unitários.
+```
+
+**Resultado:**
+- ✅ Issue criada automaticamente
+- 📌 Título gerado pela IA
+- 📄 Descrição estruturada em Markdown
+- 🏷️ Labels aplicadas
+- 👤 Assignee configurado
+
+---
+
+## 🔐 Configurações
+
+### Variáveis de Ambiente Necessárias
+
+```bash
+# Obrigatórias
+export GITLAB_TOKEN="glpat-xxxxx"
+export OPENAI_API_KEY="sk-proj-xxxxx"
+
+# Opcionais (com defaults)
+export GITLAB_API_URL="http://gitlab.dimed.com.br/api/v4"
+export GITLAB_DEFAULT_GROUP="grupopanvel/varejo/crm"
+export GITLAB_DEFAULT_ASSIGNEE="lanschau"
+export MR_REVIEW_OPENAI_TIMEOUT_SECONDS="90"
+```
+
+### Como Obter Tokens
+
+**GitLab Token:**
+1. Acesse: http://gitlab.dimed.com.br/-/user_settings/personal_access_tokens
+2. Crie token com scope: `api`
+3. Copie o token gerado
+
+**OpenAI API Key:**
+1. Acesse: https://platform.openai.com/api-keys
+2. Crie nova API key
+3. Copie a chave
+
+---
+
+## 📚 Documentação Adicional
+
+- **[MCP_SERVER_README.md](MCP_SERVER_README.md)** - Documentação completa do MCP Server
+- **[SETUP_OUTROS_USUARIOS.md](SETUP_OUTROS_USUARIOS.md)** - Guia para distribuir para outros devs
+- **[mcp-config.json](mcp-config.json)** - Exemplo de configuração MCP
+
+---
+
+## 🚨 Troubleshooting
+
+### MCP Server não aparece no Copilot
+
+1. Verifique logs: VS Code > Output > GitHub Copilot
+2. Confirme que tokens estão configurados: `echo $GITLAB_TOKEN`
+3. Teste execução manual:
+   ```bash
+   echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | \
+   .venv/bin/python gitlab_issue_mcp_server.py
+   ```
+
+### Projeto não encontrado
+
+1. Liste projetos disponíveis:
+   ```
+   @workspace liste os projetos GitLab
+   ```
+2. Use nome exato ou parcial
+3. Verifique permissões do token
+
+### IA não está gerando bom conteúdo
+
+- Forneça mais contexto detalhado
+- Seja específico sobre requisitos técnicos
+- Use bullet points para organizar informações
+- Mencione prefixos desejados no contexto
+
+---
+
+## 🤝 Compartilhar com Outros Devs
+
+Para compartilhar o Issue Creator:
+
+1. **Enviar arquivos:**
+   - `gitlab_issue_mcp_server.py`
+   - `requirements.txt`
+   - `SETUP_OUTROS_USUARIOS.md`
+
+2. **Instruir a:**
+   - Instalar dependências
+   - Configurar tokens
+   - Adicionar ao mcp.json do VS Code
+   - Reiniciar VS Code
+
+Ver guia completo em: [SETUP_OUTROS_USUARIOS.md](SETUP_OUTROS_USUARIOS.md)
+
+---
+
+## 📝 Tecnologias
+
+- **Python 3.8+**
+- **GitLab API** - Integração com GitLab
+- **OpenAI API** - GPT-4.1 para geração de conteúdo
+- **MCP (Model Context Protocol)** - Integração com Copilot
+- **unidiff** - Parsing de diffs
+- **requests** - HTTP client
+
+---
+
+## 📄 Licença
+
+Uso interno Grupo Panvel.
+
+---
+
+## 🎉 Features
+
+- [x] MR Review automatizado
+- [x] Issue Creator via MCP
+- [x] Busca em subgrupos GitLab
+- [x] Geração de conteúdo com IA
+- [x] Integração nativa com Copilot
+- [x] Customização de labels e assignees
+- [ ] Suporte a múltiplos idiomas
+- [ ] Templates customizáveis
+- [ ] Webhooks GitLab
+
+---
+
+**Desenvolvido por Leonardo Anschau** 🚀

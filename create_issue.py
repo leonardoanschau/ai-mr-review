@@ -10,7 +10,7 @@ GITLAB_API_URL = "http://gitlab.dimed.com.br/api/v4"
 # Parâmetros padrão (podem ser sobrescritos via environment variables)
 DEFAULT_GROUP = os.getenv("GITLAB_DEFAULT_GROUP", "grupopanvel/varejo/crm")
 DEFAULT_BOARD_ID = os.getenv("GITLAB_DEFAULT_BOARD", "747")
-DEFAULT_BACKLOG_LABEL = os.getenv("GITLAB_BACKLOG_LABEL", "Grupo Panvel :: Backlog")
+DEFAULT_LABELS = ["Grupo Panvel :: Analyze", "User Story"]
 DEFAULT_ASSIGNEE = os.getenv("GITLAB_DEFAULT_ASSIGNEE", "lanschau")
 
 HEADERS = {
@@ -107,27 +107,53 @@ def get_user_id(username):
     
     return users[0]["id"]
 
-def get_projects_from_group(group_path):
+def get_subgroups(group_path):
     """
-    Lista todos os projetos do grupo.
-    No GitLab, issues são criadas em projetos, não em grupos diretamente.
+    Busca todos os subgrupos de um grupo.
     """
     from urllib.parse import quote
     
     encoded_group = quote(group_path, safe='')
+    url = f"{GITLAB_API_URL}/groups/{encoded_group}/subgroups"
+    
+    try:
+        resp = requests.get(url, headers=HEADERS, params={"per_page": 100}, timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+    except requests.RequestException:
+        return []
+
+def get_projects_from_group(group_path, include_subgroups=True):
+    """
+    Lista todos os projetos do grupo e opcionalmente seus subgrupos.
+    No GitLab, issues são criadas em projetos, não em grupos diretamente.
+    """
+    from urllib.parse import quote
+    
+    all_projects = []
+    
+    # Busca projetos do grupo principal
+    encoded_group = quote(group_path, safe='')
     url = f"{GITLAB_API_URL}/groups/{encoded_group}/projects"
     
-    resp = requests.get(url, headers=HEADERS, params={"per_page": 100}, timeout=30)
-    resp.raise_for_status()
-    projects = resp.json()
+    try:
+        resp = requests.get(url, headers=HEADERS, params={"per_page": 100, "include_subgroups": "true" if include_subgroups else "false"}, timeout=30)
+        resp.raise_for_status()
+        projects = resp.json()
+        all_projects.extend(projects)
+    except requests.RequestException as e:
+        print(f"   ⚠️ Erro ao buscar projetos do grupo '{group_path}': {e}")
     
-    if not projects:
+    if not all_projects:
         raise ValueError(
-            f"Nenhum projeto encontrado no grupo '{group_path}'. "
+            f"Nenhum projeto encontrado no grupo '{group_path}' e subgrupos. "
             f"Issues devem ser criadas em projetos específicos."
         )
     
-    return projects
+    # Ordena por path para facilitar visualização
+    all_projects.sort(key=lambda p: p.get('path_with_namespace', ''))
+    
+    return all_projects
 
 def create_issue(project_id, title, description, assignee_id, labels):
     """
@@ -161,18 +187,19 @@ def main():
     print(f"\n📋 Configurações atuais:")
     print(f"   Grupo: {DEFAULT_GROUP}")
     print(f"   Board: {DEFAULT_BOARD_ID}")
-    print(f"   Label: {DEFAULT_BACKLOG_LABEL}")
+    print(f"   Labels: {', '.join(DEFAULT_LABELS)}")
     print(f"   Assignee: {DEFAULT_ASSIGNEE}")
     
     usar_padrao = input("\n✅ Usar configurações padrão? (S/n): ").strip().lower()
     
     if usar_padrao == 'n':
         group = input(f"   Grupo GitLab [{DEFAULT_GROUP}]: ").strip() or DEFAULT_GROUP
-        backlog_label = input(f"   Label backlog [{DEFAULT_BACKLOG_LABEL}]: ").strip() or DEFAULT_BACKLOG_LABEL
+        labels_input = input(f"   Labels (separadas por vírgula) [{', '.join(DEFAULT_LABELS)}]: ").strip()
+        labels = [l.strip() for l in labels_input.split(',')] if labels_input else DEFAULT_LABELS
         assignee = input(f"   Username assignee [{DEFAULT_ASSIGNEE}]: ").strip() or DEFAULT_ASSIGNEE
     else:
         group = DEFAULT_GROUP
-        backlog_label = DEFAULT_BACKLOG_LABEL
+        labels = DEFAULT_LABELS
         assignee = DEFAULT_ASSIGNEE
     
     print("\n" + "=" * 70)
@@ -225,14 +252,15 @@ def main():
         print(f"   ✅ Usuário encontrado: ID {assignee_id}")
         
         # Buscar projetos do grupo
-        print(f"\n🔍 Buscando projetos no grupo '{group}'...")
-        projects = get_projects_from_group(group)
+        print(f"\n🔍 Buscando projetos no grupo '{group}' (incluindo subgrupos)...")
+        projects = get_projects_from_group(group, include_subgroups=True)
         print(f"   ✅ {len(projects)} projeto(s) encontrado(s)\n")
         
         # Listar projetos para escolha
         print("Projetos disponíveis:")
         for idx, proj in enumerate(projects, 1):
-            print(f"   {idx}. {proj['name']} ({proj['path']})")
+            path_display = proj.get('path_with_namespace', proj['path'])
+            print(f"   {idx}. {proj['name']} ({path_display})")
         
         # Escolher projeto
         if len(projects) == 1:
@@ -253,7 +281,6 @@ def main():
                     print("   ⚠️ Digite um número válido")
         
         # Criar issue
-        labels = [backlog_label]
         issue = create_issue(project_id, title, description, assignee_id, labels)
         
         print("\n" + "=" * 70)

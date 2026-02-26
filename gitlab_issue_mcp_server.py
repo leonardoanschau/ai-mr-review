@@ -47,13 +47,22 @@ def get_issue_template() -> str:
         "}\n"
         "```\n\n"
         
+        "## 🔗 Dependências\n\n"
+        "[Se aplicável: Listar serviços externos, outras USs/tasks pré-requisito, bibliotecas, acessos necessários]\n\n"
+        
         "## ✅ Tarefas\n\n"
         "- [ ] [Tarefa técnica específica 1]\n"
         "- [ ] [Tarefa técnica específica 2]\n"
         "- [ ] [Tarefa técnica específica 3]\n\n"
         
+        "## ⚡ Impactos e Compatibilidade\n\n"
+        "[Se aplicável: Breaking changes, migrações, impactos em outros sistemas, documentações a atualizar]\n\n"
+        
         "## ⚠️ Observações\n\n"
         "[Pontos de atenção, riscos, dependências ou considerações importantes]\n\n"
+        
+        "## 📊 Métricas de Sucesso\n\n"
+        "[Se aplicável: SLAs/SLOs, logs/monitoramento, alertas, como medir sucesso]\n\n"
         
         "## ✔️ Critérios de Aceite\n\n"
         "- [ ] [Critério verificável 1]\n"
@@ -184,7 +193,7 @@ def handle_list_tools() -> dict:
             },
             {
                 "name": "get_issue_template",
-                "description": "Retorna o template padrão para criação de issues (User Stories, Bugs, Débito Técnico) incluindo seções para Objetivo, Contexto, Contratos de API (Request/Response), Tarefas, Observações e Critérios de Aceite. Use para referência ao criar conteúdo de issues.",
+                "description": "Retorna o template padrão para criação de issues (User Stories, Bugs, Débito Técnico) incluindo seções para Objetivo, Contexto, Contratos de API (Request/Response), Dependências, Tarefas, Impactos e Compatibilidade, Observações, Métricas de Sucesso e Critérios de Aceite. Ao gerar issues, avalie o contexto e inclua apenas seções relevantes - nem toda US precisa de todas as seções.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {},
@@ -282,10 +291,25 @@ def handle_get_template() -> dict:
         "- `[US] -` para User Stories\n"
         "- `[BUG] -` para Bugs\n"
         "- `[TD] -` para Débito Técnico\n\n"
-        "📡 **Contratos de API:**\n"
+        "� **Orientações por seção:**\n\n"
+        "**📡 Contratos de API:**\n"
         "- Para **endpoints novos**: Sugira contratos completos de Request e Response\n"
-        "- Para **endpoints existentes**: Sugira apenas as propriedades/objetos novos a serem adicionados\n"
-        "- Se não aplicável (ex: bug, refactor sem API): Pode omitir ou simplificar a seção"
+        "- Para **endpoints existentes**: Sugira apenas as propriedades/objetos novos\n"
+        "- Se não aplicável: Pode omitir a seção\n\n"
+        
+        "**🔗 Dependências:**\n"
+        "- Incluir apenas se houver integrações externas, pré-requisitos ou dependências significativas\n"
+        "- Para mudanças simples/isoladas: Pode omitir\n\n"
+        
+        "**⚡ Impactos e Compatibilidade:**\n"
+        "- Incluir se houver breaking changes, migrações ou impactos em outros sistemas\n"
+        "- Para features novas sem breaking change: Pode omitir ou simplificar\n\n"
+        
+        "**📊 Métricas de Sucesso:**\n"
+        "- Incluir para features críticas ou que exigem SLA/monitoramento específico\n"
+        "- Para bugs simples ou refactors internos: Pode omitir\n\n"
+        
+        "✅ **Regra geral**: Avalie o contexto e inclua apenas seções relevantes. Nem toda US precisa de todas as seções!"
     )
     
     return {

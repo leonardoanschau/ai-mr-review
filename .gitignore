@@ -2,6 +2,13 @@
 __pycache__/
 *.py[cod]
 .venv/
+*.so
+.Python
+
+# Node / TypeScript
+node_modules/
+*.tsbuildinfo
+npm-debug.log*
 
 # Local logs/artifacts
 debug.log
@@ -10,14 +17,21 @@ debug.log
 # Java build outputs
 build/
 target/
-out/
 bin/
+
+# VS Code Extension
+out/
 dist/
+*.vsix
+.vscode-test/
 
 # IDE / OS
 .DS_Store
 .idea/
 .vscode/
 
-# Envs
+# Secrets
 .env
+.env.local
+*.pem
+*.key

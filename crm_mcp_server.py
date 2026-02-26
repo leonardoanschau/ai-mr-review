@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-GitLab Issue Creator MCP Server
-Servidor MCP para criar issues no GitLab com IA gerando título e descrição.
+Varejo CRM MCP Server
+Servidor MCP com ferramentas para o time Varejo CRM.
+Inclui: GitLab Issue Creator, e mais ferramentas em desenvolvimento.
 """
 
 import json
@@ -324,10 +325,10 @@ def _create_create_issue_tool() -> dict:
     }
 
 def _create_get_template_tool() -> dict:
-    """Cria definição da tool get_issue_template"""
+    """Cria definição da tool get_gitlab_issue_template"""
     return {
-        "name": "get_issue_template",
-        "description": "Retorna o template padrão para criação de issues (User Stories, Bugs, Débito Técnico) incluindo seções para Objetivo, Contexto, Contratos de API (Request/Response), Dependências, Tarefas, Impactos e Compatibilidade, Observações, Métricas de Sucesso e Critérios de Aceite. Ao gerar issues, avalie o contexto e inclua apenas seções relevantes - nem toda US precisa de todas as seções.",
+        "name": "get_gitlab_issue_template",
+        "description": "Retorna o template padrão para criação de issues no GitLab (User Stories, Bugs, Débito Técnico) incluindo seções para Objetivo, Contexto, Contratos de API (Request/Response), Dependências, Tarefas, Impactos e Compatibilidade, Observações, Métricas de Sucesso e Critérios de Aceite. Ao gerar issues, avalie o contexto e inclua apenas seções relevantes - nem toda US precisa de todas as seções.",
         "inputSchema": {
             "type": "object",
             "properties": {},
@@ -374,7 +375,7 @@ def handle_call_tool(tool_name: str, arguments: dict) -> dict:
             return handle_list_projects()
         elif tool_name == "create_gitlab_issue":
             return handle_create_issue(arguments)
-        elif tool_name == "get_issue_template":
+        elif tool_name == "get_gitlab_issue_template":
             return handle_get_template()
         else:
             log_error(f"Tool desconhecida: {tool_name}")
@@ -516,7 +517,7 @@ def handle_initialize(params: dict) -> dict:
             "tools": {}
         },
         "serverInfo": {
-            "name": "gitlab-issue-creator",
+            "name": "varejo-crm-mcp",
             "version": "1.0.0"
         }
     }
@@ -620,7 +621,7 @@ def _handle_unexpected_error(error: Exception):
 def main():
     """Main loop do MCP server - lê stdin e processa mensagens JSON-RPC"""
     log_info("=" * 60)
-    log_info("GitLab Issue Creator MCP Server iniciado")
+    log_info("Varejo CRM MCP Server iniciado")
     log_info(f"Protocolo MCP: {MCP_PROTOCOL_VERSION}")
     log_info("=" * 60)
     

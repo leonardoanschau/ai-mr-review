@@ -1,112 +1,180 @@
-# AI MR Review & GitLab Issue Creator
+# 🚀 Varejo CRM MCP for VS Code
 
-Automação para GitLab com OpenAI: revisão de código e criação de issues.
+**Versão 1.0.0** | MIT License
 
-## Ferramentas
+Ferramentas de produtividade para o time Varejo CRM do Grupo Panvel. Crie issues no GitLab de forma inteligente usando GitHub Copilot!
 
-### 1. MR Review (`main.py`)
-Analisa Merge Requests e comenta sugestões de melhoria diretamente no GitLab. Foca em bugs, segurança, performance e violações de SOLID.
+## ✨ Funcionalidades
 
+- 🎯 **Criação de Issues GitLab** - Use linguagem natural com Copilot
+- 📋 **Templates Completos** - User Stories, Bugs e Débito Técnico
+- 🔍 **Busca de Projetos** - Lista todos os projetos do grupo CRM recursivamente
+- 📡 **Contratos de API** - Templates incluem seções de Request/Response
+- 🤖 **Integração com Copilot** - IA gera conteúdo automaticamente
+- 🔐 **Seguro** - Tokens armazenados de forma criptografada
+
+## 🎬 Começando
+
+### 1️⃣ Instalação
+
+**Opção A: VS Code Marketplace** (em breve)
+```
+Extensions → Buscar "Varejo CRM MCP" → Install
+```
+
+**Opção B: VSIX Manual**
 ```bash
-python main.py
-# Informe project_id e mr_iid quando solicitado
+# Baixe o .vsix do GitLab Releases
+code --install-extension varejo-crm-mcp-1.0.0.vsix
 ```
 
-### 2. Issue Creator (`gitlab_issue_mcp_server.py`)
-Servidor MCP que cria issues no GitLab. A IA gera título e descrição **visual e objetiva** com emojis e formatação chamativa. Detecta automaticamente o tipo e adiciona prefixo:
-- `[US] -` para User Stories
-- `[TD] -` para Débitos Técnicos  
-- `[BUG] -` para Bugs
+### 2️⃣ Configuração (Primeira Vez)
 
-**Uso via Copilot:**
+Após instalar, a extensão abrirá um wizard automaticamente. Configure:
+
+1. **GitLab URL**: `http://gitlab.dimed.com.br/api/v4`
+2. **GitLab Token**: Seu personal access token ([como obter](#-obter-gitlab-token))
+3. **Grupo Padrão**: `grupopanvel/varejo/crm`
+4. **Assignee Padrão**: Seu username GitLab
+
+✅ **Pronto!** A extensão está configurada e o servidor MCP rodando.
+
+### 3️⃣ Uso com GitHub Copilot
+
+Abra o **Copilot Chat** (`Ctrl+Shift+I`) e use linguagem natural:
+
 ```
-@workspace crie uma user story no projeto user-stories sobre implementar cache Redis
-```
-
-**Tools disponíveis:**
-- `list_gitlab_projects` - Lista projetos do grupo
-- `create_gitlab_issue` - Cria issue com contexto (auto-detecta tipo)
-- `generate_issue_content` - Gera apenas conteúdo sem criar
-
-## Setup
-
-### 1. Dependências
-```bash
-pip install -r requirements.txt
+@workspace crie uma US no projeto Acompanhamento sobre implementar cache Redis
 ```
 
-### 2. Variáveis de Ambiente
-```bash
-export GITLAB_TOKEN="glpat-xxxxx"      # Token com scope 'api'
-export OPENAI_API_KEY="sk-proj-xxxxx"
+```
+@workspace liste os projetos GitLab do CRM
 ```
 
-### 3. Configurar MCP (Issue Creator)
+```
+@workspace mostre o template de issues do GitLab
+```
 
-Edite `~/Library/Application Support/Code/User/mcp.json`:
+**A IA vai:**
+1. Listar os projetos disponíveis
+2. Você escolhe qual projeto
+3. IA gera título e descrição completos
+4. Cria a issue automaticamente
 
+## 📋 Template de Issues
+
+Todas as issues criadas seguem nosso template padrão com 9 seções:
+
+- 🎯 **Objetivo** - O que será feito e para quê
+- 📌 **Contexto** - Situação atual e necessidade
+- 📡 **Contratos de API** - Request/Response (se aplicável)
+- 🔗 **Dependências** - Serviços, bibliotecas, pré-requisitos
+- ✅ **Tarefas** - Checklist técnico
+- ⚡ **Impactos e Compatibilidade** - Breaking changes, migrações
+- ⚠️ **Observações** - Riscos e pontos de atenção
+- 📊 **Métricas de Sucesso** - SLAs, monitoramento
+- ✔️ **Critérios de Aceite** - Como validar
+
+> **Nota:** A IA avalia o contexto e inclui apenas seções relevantes. Nem toda US precisa de todas as seções.
+
+## 🔐 Obter GitLab Token
+
+1. Acesse: http://gitlab.dimed.com.br/-/user_settings/personal_access_tokens
+2. Clique em **"Add new token"**
+3. Configure:
+   - **Name**: `VS Code MCP`
+   - **Scopes**: Marque `api`, `read_user`, `write_repository`
+   - **Expiration**: 1 ano (recomendado)
+4. Clique em **"Create personal access token"**
+5. **Copie o token** (só aparece uma vez!)
+6. Cole no wizard da extensão
+
+## ⚙️ Configuração Manual
+
+Se precisar reconfigurar:
+
+**Command Palette** (`Cmd+Shift+P` / `Ctrl+Shift+P`):
+```
+Varejo CRM: Configurar GitLab
+```
+
+**Ou edite manualmente:**
 ```json
+// settings.json
 {
-  "servers": {
-    "gitlab-issue-creator": {
-      "command": "/caminho/.venv/bin/python",
-      "args": ["/caminho/gitlab_issue_mcp_server.py"],
-      "env": {
-        "GITLAB_TOKEN": "${env:GITLAB_TOKEN}",
-        "OPENAI_API_KEY": "${env:OPENAI_API_KEY}",
-        "GITLAB_API_URL": "http://gitlab.dimed.com.br/api/v4",
-        "GITLAB_DEFAULT_GROUP": "grupopanvel/varejo/crm",
-        "GITLAB_DEFAULT_ASSIGNEE": "seu-username"
-      },
-      "type": "stdio"
-    }
-  }
+  "varejocrm.gitlab.url": "http://gitlab.dimed.com.br/api/v4",
+  "varejocrm.gitlab.defaultGroup": "grupopanvel/varejo/crm",
+  "varejocrm.gitlab.defaultAssignee": "seu-username"
 }
 ```
 
-Reinicie o VS Code.
+Token via Command Palette: `Varejo CRM: Configurar GitLab`
 
-## Configuração Avançada
+## 🛠️ Comandos Disponíveis
 
-### MR Review - Variáveis Opcionais
-```bash
-export MR_REVIEW_MODE="balanced"              # strict, balanced, lenient
-export MR_REVIEW_OPENAI_TIMEOUT_SECONDS="120"
-export MR_REVIEW_MAX_FILE_CONTEXT_CHARS="80000"
-export MR_REVIEW_DEBUG="1"                     # Ativa logs detalhados
-```
+| Comando | Descrição |
+|---------|-----------|
+| `Varejo CRM: Configurar GitLab` | Abre wizard de configuração |
+| `Varejo CRM: Criar Issue no GitLab` | Dicas de uso com Copilot |
+| `Varejo CRM: Listar Projetos GitLab` | Dicas de busca de projetos |
+| `Varejo CRM: Mostrar Template de Issue` | Exibe template completo |
 
-### Issue Creator - Variáveis Opcionais
-```bash
-export GITLAB_API_URL="http://gitlab.dimed.com.br/api/v4"
-export GITLAB_DEFAULT_GROUP="grupopanvel/varejo/crm"
-export GITLAB_DEFAULT_ASSIGNEE="lanschau"
-```
+## 🐛 Troubleshooting
 
-## Tokens
+### ❌ Server não inicia
 
-**GitLab:** http://gitlab.dimed.com.br/-/user_settings/personal_access_tokens (scope: `api`)
+1. Verifique o **Output Channel**: `View → Output → Varejo CRM MCP Server`
+2. Confirme que Python está instalado: `python3 --version`
+3. Reconfigure: `Varejo CRM: Configurar GitLab`
 
-**OpenAI:** https://platform.openai.com/api-keys
+### ❌ Copilot não reconhece as tools
 
-## Troubleshooting
+1. Reinicie o VS Code
+2. Verifique se o servidor está rodando (status bar: ✅ CRM MCP)
+3. Verifique os logs no Output Channel
 
-**MCP não aparece no Copilot:**
-```bash
-# Teste manual
-echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | \
-.venv/bin/python gitlab_issue_mcp_server.py
-```
+### ❌ Projeto não encontrado
 
-**Projeto não encontrado:**
+Use o comando exato da lista:
 ```
 @workspace liste os projetos GitLab
 ```
 
-## Arquivos
+Copie o nome exato do projeto da lista retornada.
 
-- `main.py` - MR Review
-- `gitlab_issue_mcp_server.py` - MCP Server
-- `requirements.txt` - Dependências
-- [MCP_SERVER_README.md](MCP_SERVER_README.md) - Documentação completa MCP
-- [SETUP_OUTROS_USUARIOS.md](SETUP_OUTROS_USUARIOS.md) - Guia de distribuição
+## 📦 Build Manual (Desenvolvedores)
+
+```bash
+# Clone o repositório
+git clone https://gitlab.dimed.com.br/grupopanvel/varejo/crm/varejo-crm-mcp
+cd varejo-crm-mcp
+
+# Instale dependências
+npm install
+pip install -r requirements.txt
+
+# Compile TypeScript
+npm run compile
+
+# Gere o .vsix
+npm run package
+
+# Instale localmente
+code --install-extension varejo-crm-mcp-1.0.0.vsix
+```
+
+## 📝 Changelog
+
+Veja CHANGELOG.md para histórico de versões.
+
+## 🤝 Contribuindo
+
+Este projeto é mantido pelo time Varejo CRM.
+
+## 📄 Licença
+
+MIT License
+
+## 👥 Time
+
+Desenvolvido com ❤️ pelo time **Varejo CRM** do Grupo Panvel.

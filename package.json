@@ -1,0 +1,121 @@
+{
+  "name": "varejo-crm-mcp",
+  "displayName": "Varejo CRM MCP Tools",
+  "description": "Ferramentas de produtividade para o time Varejo CRM - Criação de issues GitLab, templates e mais",
+  "version": "1.0.0",
+  "publisher": "panvel",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "SCM Providers"
+  ],
+  "keywords": [
+    "gitlab",
+    "issues",
+    "user stories",
+    "mcp",
+    "copilot",
+    "panvel",
+    "crm"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "varejocrm.configure",
+        "title": "Configurar GitLab",
+        "category": "Varejo CRM"
+      },
+      {
+        "command": "varejocrm.createIssue",
+        "title": "Criar Issue no GitLab",
+        "category": "Varejo CRM"
+      },
+      {
+        "command": "varejocrm.listProjects",
+        "title": "Listar Projetos GitLab",
+        "category": "Varejo CRM"
+      },
+      {
+        "command": "varejocrm.showTemplate",
+        "title": "Mostrar Template de Issue",
+        "category": "Varejo CRM"
+      }
+    ],
+    "configuration": {
+      "title": "Varejo CRM MCP",
+      "properties": {
+        "varejocrm.gitlab.url": {
+          "type": "string",
+          "default": "http://gitlab.dimed.com.br/api/v4",
+          "description": "URL da API do GitLab",
+          "order": 1
+        },
+        "varejocrm.gitlab.defaultGroup": {
+          "type": "string",
+          "default": "grupopanvel/varejo/crm",
+          "description": "Grupo padrão do GitLab (com subgrupos recursivos)",
+          "order": 2
+        },
+        "varejocrm.gitlab.defaultAssignee": {
+          "type": "string",
+          "default": "",
+          "description": "Username padrão do assignee (vazio = você)",
+          "order": 3
+        },
+        "varejocrm.mcp.pythonPath": {
+          "type": "string",
+          "default": "python3",
+          "description": "Caminho para o executável Python",
+          "order": 4
+        },
+        "varejocrm.mcp.serverPath": {
+          "type": "string",
+          "default": "",
+          "description": "Caminho para o crm_mcp_server.py (vazio = detecta automaticamente)",
+          "order": 5
+        }
+      }
+    },
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "varejocrm.configure"
+        },
+        {
+          "command": "varejocrm.createIssue"
+        },
+        {
+          "command": "varejocrm.listProjects"
+        },
+        {
+          "command": "varejocrm.showTemplate"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package --no-dependencies --allow-missing-repository",
+    "publish": "vsce publish"
+  },
+  "devDependencies": {
+    "@types/node": "^20.x",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.x",
+    "@typescript-eslint/parser": "^6.x",
+    "eslint": "^8.x",
+    "typescript": "^5.3.0",
+    "@vscode/vsce": "^2.22.0"
+  },
+  "dependencies": {}
+}

@@ -13,128 +13,38 @@ import requests
 
 # Configurações
 GITLAB_TOKEN = os.getenv("GITLAB_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GITLAB_API_URL = os.getenv("GITLAB_API_URL", "http://gitlab.dimed.com.br/api/v4")
 DEFAULT_GROUP = os.getenv("GITLAB_DEFAULT_GROUP", "grupopanvel/varejo/crm")
 DEFAULT_ASSIGNEE = os.getenv("GITLAB_DEFAULT_ASSIGNEE", "lanschau")
 
 HEADERS = {"PRIVATE-TOKEN": GITLAB_TOKEN}
-OPENAI_TIMEOUT_SECONDS = 90
 
 def log_error(message: str):
     """Log para stderr (não interfere com MCP stdout)"""
     print(f"ERROR: {message}", file=sys.stderr)
 
-def openai_chat(messages, temperature=0.7):
-    """Chama OpenAI para gerar conteúdo"""
-    response = requests.post(
-        "https://api.openai.com/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "Content-Type": "application/json"
-        },
-        json={
-            "model": "gpt-4.1",
-            "messages": messages,
-            "temperature": temperature
-        },
-        timeout=OPENAI_TIMEOUT_SECONDS
-    )
-    response.raise_for_status()
-    return response.json()["choices"][0]["message"]["content"]
-
-def generate_issue_content(context: str) -> tuple[str, str]:
-    """Gera título e descrição usando IA"""
-    # Detecta tipo de issue e define prefixo
-    title_prefix = ""
-    context_lower = context.lower()
-    
-    # Detecta prefixo explícito no contexto
-    prefix_match = re.search(r'prefixo\s*["\']([^"\']+)["\']', context, re.IGNORECASE)
-    if prefix_match:
-        title_prefix = prefix_match.group(1).strip()
-    # Detecta Bug (prioridade alta - geralmente mais urgente)
-    elif re.search(r'\b(bug|erro|falha|defeito|quebrou|crash|exception|não funciona|parou de funcionar)\b', context_lower):
-        title_prefix = "[BUG] -"
-    # Detecta Débito Técnico
-    elif re.search(r'\b(débito técnico|debito tecnico|technical debt|refator|melhoria técnica|código legado)\b', context_lower):
-        title_prefix = "[TD] -"
-    # Detecta User Story
-    elif re.search(r'\b(user story|história de usuário|historia de usuario|funcionalidade|feature|como usuário)\b', context_lower):
-        title_prefix = "[US] -"
-    
-    system_prompt = (
-        "Você é um assistente especializado em criar issues técnicas VISUAIS e COMPLETAS para GitLab.\n\n"
-        
-        "📋 FORMATO OBRIGATÓRIO (copie esta estrutura):\n\n"
-        
+def get_issue_template() -> str:
+    """Retorna o template padrão para issues"""
+    return (
         "## 🎯 Objetivo\n\n"
-        "[Escreva 2-3 linhas explicando claramente O QUE será feito e PARA QUÊ. "
-        "Use parágrafos completos, não bullets. Seja descritivo mas direto.]\n\n"
+        "[Descrever claramente O QUE será feito e PARA QUÊ em 2-3 linhas]\n\n"
         
         "## 📌 Contexto\n\n"
-        "[Escreva 2-3 linhas descrevendo a situação atual, o problema ou necessidade. "
-        "Explique POR QUE essa issue é necessária. Use parágrafos, não bullets.]\n\n"
+        "[Descrever a situação atual, problema ou necessidade em 2-3 linhas]\n\n"
         
         "## ✅ Tarefas\n\n"
         "- [ ] [Tarefa técnica específica 1]\n"
         "- [ ] [Tarefa técnica específica 2]\n"
-        "- [ ] [Tarefa técnica específica 3]\n"
-        "[Liste todas as ações necessárias para completar a issue]\n\n"
+        "- [ ] [Tarefa técnica específica 3]\n\n"
         
         "## ⚠️ Observações\n\n"
-        "[Pontos de atenção, riscos, dependências ou considerações importantes. "
-        "Pode usar bullets ou parágrafo.]\n\n"
+        "[Pontos de atenção, riscos, dependências ou considerações importantes]\n\n"
         
         "## ✔️ Critérios de Aceite\n\n"
         "- [ ] [Critério verificável 1]\n"
         "- [ ] [Critério verificável 2]\n"
         "- [ ] [Critério verificável 3]\n"
-        "[Defina como validar que a issue foi concluída com sucesso]\n\n"
-        
-        "💡 REGRAS:\n"
-        "- Use ## para títulos (não apenas negrito)\n"
-        "- Objetivo e Contexto: parágrafos de 2-3 linhas, não bullets\n"
-        "- Use `backticks` para código, métodos, variáveis\n"
-        "- Use **negrito** para ações críticas\n"
-        "- Tarefas e Critérios: use checklist - [ ]\n\n"
     )
-    
-    user_prompt = f"Crie uma issue técnica VISUAL e OBJETIVA:\n\nCONTEXTO:\n{context}\n\n"
-    
-    if title_prefix:
-        user_prompt += f'⚠️ IMPORTANTE: O título DEVE começar com "{title_prefix}"\n\n'
-    
-    user_prompt += (
-        'Retorne a resposta no seguinte formato JSON:\n'
-        '{\n'
-        '  "title": "Título da issue aqui",\n'
-        '  "description": "Descrição completa em Markdown aqui"\n'
-        '}'
-    )
-    
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt}
-    ]
-    
-    response = openai_chat(messages, temperature=0.7)
-    
-    # Parse JSON response
-    try:
-        response_clean = response.strip()
-        if response_clean.startswith("```json"):
-            response_clean = response_clean[7:]
-        if response_clean.startswith("```"):
-            response_clean = response_clean[3:]
-        if response_clean.endswith("```"):
-            response_clean = response_clean[:-3]
-        
-        issue_data = json.loads(response_clean.strip())
-        return issue_data["title"], issue_data["description"]
-    except (json.JSONDecodeError, KeyError) as e:
-        log_error(f"Erro ao parsear resposta da IA: {e}")
-        return "Issue criada por IA", response
 
 def get_user_id(username: str) -> int:
     """Busca ID do usuário no GitLab"""
@@ -228,7 +138,7 @@ def handle_list_tools() -> dict:
             },
             {
                 "name": "create_gitlab_issue",
-                "description": "Cria uma nova issue no GitLab com conteúdo gerado por IA. ⚠️ IMPORTANTE: NUNCA use esta tool sem antes chamar 'list_gitlab_projects' e pedir para o usuário escolher o projeto. Detecta automaticamente o tipo (User Story, Débito Técnico ou Bug) e adiciona prefixo [US], [TD] ou [BUG]. Gera título e descrição visuais com emojis e formatação.",
+                "description": "Cria uma nova issue no GitLab com título e descrição fornecidos. ⚠️ IMPORTANTE: NUNCA use esta tool sem antes chamar 'list_gitlab_projects' e pedir para o usuário escolher o projeto. O GitHub Copilot deve gerar o título e descrição antes de chamar esta tool.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -236,9 +146,13 @@ def handle_list_tools() -> dict:
                             "type": "string",
                             "description": "Nome EXATO do projeto escolhido pelo usuário da lista (ex: 'Acompanhamento', 'Atividades'). OBRIGATÓRIO."
                         },
-                        "context": {
+                        "title": {
                             "type": "string",
-                            "description": "Contexto da issue. Mencione 'user story', 'débito técnico' ou 'bug' para detecção automática do tipo."
+                            "description": "Título completo da issue incluindo prefixo [US], [TD] ou [BUG] se aplicável. OBRIGATÓRIO."
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Descrição completa da issue em Markdown seguindo o template padrão. OBRIGATÓRIO."
                         },
                         "assignee": {
                             "type": "string",
@@ -250,21 +164,16 @@ def handle_list_tools() -> dict:
                             "description": "Labels da issue (opcional, padrão: ['Grupo Panvel :: Analyze', 'User Story'])"
                         }
                     },
-                    "required": ["project_name", "context"]
+                    "required": ["project_name", "title", "description"]
                 }
             },
             {
-                "name": "generate_issue_content",
-                "description": "Gera apenas conteúdo (título e descrição) para uma issue usando IA, sem criar a issue",
+                "name": "get_issue_template",
+                "description": "Retorna o template padrão para criação de issues (User Stories, Bugs, Débito Técnico). Use para referência ao criar conteúdo de issues.",
                 "inputSchema": {
                     "type": "object",
-                    "properties": {
-                        "context": {
-                            "type": "string",
-                            "description": "Contexto descrevendo a issue desejada"
-                        }
-                    },
-                    "required": ["context"]
+                    "properties": {},
+                    "required": []
                 }
             }
         ]
@@ -277,8 +186,8 @@ def handle_call_tool(tool_name: str, arguments: dict) -> dict:
             return handle_list_projects()
         elif tool_name == "create_gitlab_issue":
             return handle_create_issue(arguments)
-        elif tool_name == "generate_issue_content":
-            return handle_generate_content(arguments)
+        elif tool_name == "get_issue_template":
+            return handle_get_template()
         else:
             return {
                 "content": [{"type": "text", "text": f"❌ Tool desconhecida: {tool_name}"}],
@@ -316,12 +225,10 @@ def handle_list_projects() -> dict:
 def handle_create_issue(arguments: dict) -> dict:
     """Cria issue no GitLab"""
     project_name = arguments["project_name"]
-    context = arguments["context"]
+    title = arguments["title"]
+    description = arguments["description"]
     assignee = arguments.get("assignee", DEFAULT_ASSIGNEE)
     labels = arguments.get("labels", ["Grupo Panvel :: Analyze", "User Story"])
-    
-    # Gera título e descrição com IA
-    title, description = generate_issue_content(context)
     
     # Busca projeto
     project = find_project_by_name(project_name, DEFAULT_GROUP)
@@ -347,13 +254,19 @@ def handle_create_issue(arguments: dict) -> dict:
         "isError": False
     }
 
-def handle_generate_content(arguments: dict) -> dict:
-    """Gera apenas conteúdo da issue sem criar"""
-    context = arguments["context"]
+def handle_get_template() -> dict:
+    """Retorna template de issue"""
+    template = get_issue_template()
     
-    title, description = generate_issue_content(context)
-    
-    result = f"📌 **TÍTULO:**\n{title}\n\n📄 **DESCRIÇÃO:**\n{description}"
+    result = (
+        "📋 **Template padrão para Issues GitLab:**\n\n"
+        "Use este formato para criar User Stories, Bugs ou Débito Técnico.\n\n"
+        f"```markdown\n{template}\n```\n\n"
+        "💡 **Prefixos:**\n"
+        "- `[US] -` para User Stories\n"
+        "- `[BUG] -` para Bugs\n"
+        "- `[TD] -` para Débito Técnico"
+    )
     
     return {
         "content": [{"type": "text", "text": result}],
@@ -409,9 +322,6 @@ def main():
     # Valida variáveis de ambiente
     if not GITLAB_TOKEN:
         log_error("ERRO: GITLAB_TOKEN não configurado")
-        sys.exit(1)
-    if not OPENAI_API_KEY:
-        log_error("ERRO: OPENAI_API_KEY não configurado")
         sys.exit(1)
     
     # Loop principal: lê mensagens do stdin e responde no stdout

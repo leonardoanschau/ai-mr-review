@@ -13,16 +13,19 @@ python main.py
 ```
 
 ### 2. Issue Creator (`gitlab_issue_mcp_server.py`)
-Servidor MCP que cria issues no GitLab. A IA gera título e descrição baseado no contexto fornecido.
+Servidor MCP que cria issues no GitLab. A IA gera título e descrição **visual e objetiva** com emojis e formatação chamativa. Detecta automaticamente o tipo e adiciona prefixo:
+- `[US] -` para User Stories
+- `[TD] -` para Débitos Técnicos  
+- `[BUG] -` para Bugs
 
 **Uso via Copilot:**
 ```
-@workspace crie uma issue no projeto user-stories sobre implementar cache Redis
+@workspace crie uma user story no projeto user-stories sobre implementar cache Redis
 ```
 
 **Tools disponíveis:**
 - `list_gitlab_projects` - Lista projetos do grupo
-- `create_gitlab_issue` - Cria issue com contexto
+- `create_gitlab_issue` - Cria issue com contexto (auto-detecta tipo)
 - `generate_issue_content` - Gera apenas conteúdo sem criar
 
 ## Setup

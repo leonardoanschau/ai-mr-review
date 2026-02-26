@@ -45,28 +45,65 @@ def openai_chat(messages, temperature=0.7):
 
 def generate_issue_content(context: str) -> tuple[str, str]:
     """Gera título e descrição usando IA"""
-    # Detecta prefixo no contexto
+    # Detecta tipo de issue e define prefixo
     title_prefix = ""
+    context_lower = context.lower()
+    
+    # Detecta prefixo explícito no contexto
     prefix_match = re.search(r'prefixo\s*["\']([^"\']+)["\']', context, re.IGNORECASE)
     if prefix_match:
         title_prefix = prefix_match.group(1).strip()
+    # Detecta Bug (prioridade alta - geralmente mais urgente)
+    elif re.search(r'\b(bug|erro|falha|defeito|quebrou|crash|exception|não funciona|parou de funcionar)\b', context_lower):
+        title_prefix = "[BUG] -"
+    # Detecta Débito Técnico
+    elif re.search(r'\b(débito técnico|debito tecnico|technical debt|refator|melhoria técnica|código legado)\b', context_lower):
+        title_prefix = "[TD] -"
+    # Detecta User Story
+    elif re.search(r'\b(user story|história de usuário|historia de usuario|funcionalidade|feature|como usuário)\b', context_lower):
+        title_prefix = "[US] -"
     
     system_prompt = (
-        "Você é um assistente especializado em criar issues técnicas bem estruturadas para GitLab.\n"
-        "Seu trabalho é transformar contextos em issues claras, objetivas e bem formatadas.\n"
-        "O título deve ser conciso (máximo 100 caracteres) e direto ao ponto.\n"
-        "A descrição deve ser organizada, usar Markdown, e incluir seções relevantes como:\n"
-        "- Contexto\n"
-        "- Objetivo\n"
-        "- Tarefas/Checklist (se aplicável)\n"
-        "- Observações/Notas (se aplicável)\n"
-        "\nSeja profissional mas direto. Evite formalidades desnecessárias."
+        "Você é um assistente especializado em criar issues técnicas VISUAIS e COMPLETAS para GitLab.\n\n"
+        
+        "📋 FORMATO OBRIGATÓRIO (copie esta estrutura):\n\n"
+        
+        "## 🎯 Objetivo\n\n"
+        "[Escreva 2-3 linhas explicando claramente O QUE será feito e PARA QUÊ. "
+        "Use parágrafos completos, não bullets. Seja descritivo mas direto.]\n\n"
+        
+        "## 📌 Contexto\n\n"
+        "[Escreva 2-3 linhas descrevendo a situação atual, o problema ou necessidade. "
+        "Explique POR QUE essa issue é necessária. Use parágrafos, não bullets.]\n\n"
+        
+        "## ✅ Tarefas\n\n"
+        "- [ ] [Tarefa técnica específica 1]\n"
+        "- [ ] [Tarefa técnica específica 2]\n"
+        "- [ ] [Tarefa técnica específica 3]\n"
+        "[Liste todas as ações necessárias para completar a issue]\n\n"
+        
+        "## ⚠️ Observações\n\n"
+        "[Pontos de atenção, riscos, dependências ou considerações importantes. "
+        "Pode usar bullets ou parágrafo.]\n\n"
+        
+        "## ✔️ Critérios de Aceite\n\n"
+        "- [ ] [Critério verificável 1]\n"
+        "- [ ] [Critério verificável 2]\n"
+        "- [ ] [Critério verificável 3]\n"
+        "[Defina como validar que a issue foi concluída com sucesso]\n\n"
+        
+        "💡 REGRAS:\n"
+        "- Use ## para títulos (não apenas negrito)\n"
+        "- Objetivo e Contexto: parágrafos de 2-3 linhas, não bullets\n"
+        "- Use `backticks` para código, métodos, variáveis\n"
+        "- Use **negrito** para ações críticas\n"
+        "- Tarefas e Critérios: use checklist - [ ]\n\n"
     )
     
-    user_prompt = f"Com base no contexto abaixo, crie uma issue técnica:\n\nCONTEXTO:\n{context}\n\n"
+    user_prompt = f"Crie uma issue técnica VISUAL e OBJETIVA:\n\nCONTEXTO:\n{context}\n\n"
     
     if title_prefix:
-        user_prompt += f'IMPORTANTE: O título deve começar com o prefixo "{title_prefix}"\n\n'
+        user_prompt += f'⚠️ IMPORTANTE: O título DEVE começar com "{title_prefix}"\n\n'
     
     user_prompt += (
         'Retorne a resposta no seguinte formato JSON:\n'
@@ -182,7 +219,7 @@ def handle_list_tools() -> dict:
         "tools": [
             {
                 "name": "list_gitlab_projects",
-                "description": "Lista todos os projetos GitLab do grupo CRM configurado (incluindo subgrupos)",
+                "description": "⚠️ OBRIGATÓRIO CHAMAR PRIMEIRO ⚠️ Lista todos os projetos GitLab do grupo CRM (incluindo subgrupos recursivamente). SEMPRE use esta tool ANTES de criar uma issue para o usuário escolher o projeto correto.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {},
@@ -191,17 +228,17 @@ def handle_list_tools() -> dict:
             },
             {
                 "name": "create_gitlab_issue",
-                "description": "Cria uma nova issue no GitLab. A IA gera automaticamente título e descrição com base no contexto fornecido. Suporta busca de projeto por nome e labels múltiplas.",
+                "description": "Cria uma nova issue no GitLab com conteúdo gerado por IA. ⚠️ IMPORTANTE: NUNCA use esta tool sem antes chamar 'list_gitlab_projects' e pedir para o usuário escolher o projeto. Detecta automaticamente o tipo (User Story, Débito Técnico ou Bug) e adiciona prefixo [US], [TD] ou [BUG]. Gera título e descrição visuais com emojis e formatação.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "project_name": {
                             "type": "string",
-                            "description": "Nome do projeto GitLab (ex: 'user-stories', 'customer-service')"
+                            "description": "Nome EXATO do projeto escolhido pelo usuário da lista (ex: 'Acompanhamento', 'Atividades'). OBRIGATÓRIO."
                         },
                         "context": {
                             "type": "string",
-                            "description": "Contexto da issue que será usado pela IA para gerar título e descrição"
+                            "description": "Contexto da issue. Mencione 'user story', 'débito técnico' ou 'bug' para detecção automática do tipo."
                         },
                         "assignee": {
                             "type": "string",
@@ -258,14 +295,18 @@ def handle_list_projects() -> dict:
     """Lista projetos do GitLab"""
     projects = get_projects_from_group(DEFAULT_GROUP)
     
-    result = f"📁 Projetos no grupo '{DEFAULT_GROUP}':\n\n"
-    for proj in projects:
+    result = f"📁 **Projetos disponíveis em '{DEFAULT_GROUP}' (recursivo):**\n\n"
+    
+    for i, proj in enumerate(projects, 1):
         path_display = proj.get('path_with_namespace', proj['path'])
-        result += f"- **{proj['name']}** (`{path_display}`)\n"
-        result += f"  ID: {proj['id']}\n"
+        result += f"{i}. **{proj['name']}**\n"
+        result += f"   Path: `{path_display}`\n"
         if proj.get('description'):
-            result += f"  Descrição: {proj['description']}\n"
+            desc = proj['description'][:100] + '...' if len(proj['description']) > 100 else proj['description']
+            result += f"   Descrição: {desc}\n"
         result += "\n"
+    
+    result += f"\n✅ Total: {len(projects)} projetos encontrados"
     
     return {
         "content": [{"type": "text", "text": result}],

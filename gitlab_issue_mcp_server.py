@@ -23,6 +23,10 @@ def log_error(message: str):
     """Log para stderr (não interfere com MCP stdout)"""
     print(f"ERROR: {message}", file=sys.stderr)
 
+def log_info(message: str):
+    """Log informativo para stderr (não interfere com MCP stdout)"""
+    print(f"INFO: {message}", file=sys.stderr)
+
 def get_issue_template() -> str:
     """Retorna o template padrão para issues"""
     return (
@@ -361,7 +365,7 @@ def process_message(message: dict) -> dict:
 
 def main():
     """Main loop do MCP server"""
-    log_error("GitLab Issue Creator MCP Server iniciado")
+    log_info("GitLab Issue Creator MCP Server iniciado")
     
     # Valida variáveis de ambiente
     if not GITLAB_TOKEN:

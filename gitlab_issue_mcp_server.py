@@ -32,6 +32,21 @@ def get_issue_template() -> str:
         "## 📌 Contexto\n\n"
         "[Descrever a situação atual, problema ou necessidade em 2-3 linhas]\n\n"
         
+        "## 📡 Contratos de API\n\n"
+        "### Request\n"
+        "```json\n"
+        "{\n"
+        "  // Estrutura do request, se aplicável\n"
+        "}\n"
+        "```\n\n"
+        
+        "### Response\n"
+        "```json\n"
+        "{\n"
+        "  // Estrutura do response, se aplicável\n"
+        "}\n"
+        "```\n\n"
+        
         "## ✅ Tarefas\n\n"
         "- [ ] [Tarefa técnica específica 1]\n"
         "- [ ] [Tarefa técnica específica 2]\n"
@@ -169,7 +184,7 @@ def handle_list_tools() -> dict:
             },
             {
                 "name": "get_issue_template",
-                "description": "Retorna o template padrão para criação de issues (User Stories, Bugs, Débito Técnico). Use para referência ao criar conteúdo de issues.",
+                "description": "Retorna o template padrão para criação de issues (User Stories, Bugs, Débito Técnico) incluindo seções para Objetivo, Contexto, Contratos de API (Request/Response), Tarefas, Observações e Critérios de Aceite. Use para referência ao criar conteúdo de issues.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {},
@@ -260,12 +275,17 @@ def handle_get_template() -> dict:
     
     result = (
         "📋 **Template padrão para Issues GitLab:**\n\n"
-        "Use este formato para criar User Stories, Bugs ou Débito Técnico.\n\n"
+        "Use este formato para criar User Stories, Bugs ou Débito Técnico.\n"
+        "Inclui seção de **Contratos de API** (Request/Response) para endpoints.\n\n"
         f"```markdown\n{template}\n```\n\n"
         "💡 **Prefixos:**\n"
         "- `[US] -` para User Stories\n"
         "- `[BUG] -` para Bugs\n"
-        "- `[TD] -` para Débito Técnico"
+        "- `[TD] -` para Débito Técnico\n\n"
+        "📡 **Contratos de API:**\n"
+        "- Para **endpoints novos**: Sugira contratos completos de Request e Response\n"
+        "- Para **endpoints existentes**: Sugira apenas as propriedades/objetos novos a serem adicionados\n"
+        "- Se não aplicável (ex: bug, refactor sem API): Pode omitir ou simplificar a seção"
     )
     
     return {

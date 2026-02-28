@@ -5,7 +5,7 @@ import { MCPManager } from './mcp-manager';
 let mcpManager: MCPManager | undefined;
 
 export async function activate(context: vscode.ExtensionContext) {
-    console.log('Extensão Varejo CRM MCP ativada');
+    console.log('GitLab MCP extension activated');
 
     const configManager = new ConfigurationManager(context);
 
@@ -15,12 +15,12 @@ export async function activate(context: vscode.ExtensionContext) {
     if (!isConfigured) {
         // Mostra wizard de configuração
         const configure = await vscode.window.showInformationMessage(
-            '🚀 Bem-vindo ao Varejo CRM MCP! Configure suas credenciais GitLab para começar.',
-            'Configurar Agora',
-            'Depois'
+            '🚀 Welcome to GitLab MCP! Configure your GitLab credentials to get started.',
+            'Configure Now',
+            'Later'
         );
 
-        if (configure === 'Configurar Agora') {
+        if (configure === 'Configure Now') {
             await configManager.showConfigurationWizard();
         }
     } else {
@@ -36,7 +36,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Registra comandos
     context.subscriptions.push(
-        vscode.commands.registerCommand('varejocrm.configure', async () => {
+        vscode.commands.registerCommand('gitlabmcp.configure', async () => {
             await configManager.showConfigurationWizard();
             
             // Reinicia MCP se já estava rodando
@@ -52,25 +52,25 @@ export async function activate(context: vscode.ExtensionContext) {
     );
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('varejocrm.createIssue', () => {
+        vscode.commands.registerCommand('gitlabmcp.createIssue', () => {
             vscode.window.showInformationMessage(
-                '💡 Use o GitHub Copilot Chat para criar issues! Digite: "@workspace crie uma US no GitLab"'
+                '💡 Use GitHub Copilot Chat to create issues! Type: "@workspace create a GitLab issue..."'
             );
         })
     );
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('varejocrm.listProjects', () => {
+        vscode.commands.registerCommand('gitlabmcp.listProjects', () => {
             vscode.window.showInformationMessage(
-                '💡 Use o GitHub Copilot Chat para listar projetos! Digite: "liste os projetos GitLab do CRM"'
+                '💡 Use GitHub Copilot Chat to list projects! Type: "list GitLab projects"'
             );
         })
     );
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('varejocrm.showTemplate', () => {
+        vscode.commands.registerCommand('gitlabmcp.showTemplate', () => {
             vscode.window.showInformationMessage(
-                '💡 Use o GitHub Copilot Chat para ver o template! Digite: "mostre o template de issues do GitLab"'
+                '💡 Use GitHub Copilot Chat to see template! Type: "show GitLab issue template"'
             );
         })
     );

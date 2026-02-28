@@ -10,39 +10,15 @@ import sys
 import os
 from typing import Any
 import requests
-from pathlib import Path
 
 # ============================================================================
 # Configurações e Constantes
 # ============================================================================
 
-# Caminho do arquivo de configuração criado pela extensão VS Code
-CONFIG_FILE = Path.home() / ".gitlab-mcp-config.json"
-
-def load_config() -> dict:
-    """Carrega configuração do arquivo ~/.gitlab-mcp-config.json"""
-    print(f"DEBUG: Tentando ler config de: {CONFIG_FILE}", file=sys.stderr)
-    print(f"DEBUG: Arquivo existe? {CONFIG_FILE.exists()}", file=sys.stderr)
-    if CONFIG_FILE.exists():
-        try:
-            with open(CONFIG_FILE, 'r') as f:
-                config_data = json.load(f)
-                print(f"DEBUG: Config carregado com sucesso: API URL = {config_data.get('api_url')}, Group = {config_data.get('default_group')}", file=sys.stderr)
-                return config_data
-        except Exception as e:
-            print(f"ERROR: Erro ao carregar config de {CONFIG_FILE}: {e}", file=sys.stderr)
-    else:
-        print(f"DEBUG: Arquivo não existe, retornando dict vazio", file=sys.stderr)
-    return {}
-
-# Lê configurações do arquivo OU variáveis de ambiente (fallback)
-_config = load_config()
-print(f"DEBUG: Config retornado: {_config}", file=sys.stderr)
-GITLAB_TOKEN = _config.get("token") or os.getenv("GITLAB_TOKEN")
-GITLAB_API_URL = _config.get("api_url") or os.getenv("GITLAB_API_URL", "https://gitlab.com/api/v4")
-DEFAULT_GROUP = _config.get("default_group") or os.getenv("GITLAB_DEFAULT_GROUP", "")
-DEFAULT_ASSIGNEE = _config.get("default_assignee") or os.getenv("GITLAB_DEFAULT_ASSIGNEE", "")
-print(f"DEBUG: Após processing - API URL: {GITLAB_API_URL}, Group: {DEFAULT_GROUP}", file=sys.stderr)
+GITLAB_TOKEN = os.getenv("GITLAB_TOKEN")
+GITLAB_API_URL = os.getenv("GITLAB_API_URL", "https://gitlab.com/api/v4")
+DEFAULT_GROUP = os.getenv("GITLAB_DEFAULT_GROUP", "")
+DEFAULT_ASSIGNEE = os.getenv("GITLAB_DEFAULT_ASSIGNEE", "")
 
 HEADERS = {"PRIVATE-TOKEN": GITLAB_TOKEN}
 
@@ -422,16 +398,6 @@ def handle_call_tool(tool_name: str, arguments: dict) -> dict:
         log_error(f"Erro ao executar tool {tool_name}: {e}")
         return _create_error_response(str(e))
 
-
-        result += f"\n🚀 Agora você pode usar as tools do GitLab!"
-        
-        log_info("Configuração concluída com sucesso")
-        return _create_success_response(result)
-        
-    except Exception as e:
-        log_error(f"Erro na configuração: {e}")
-        return _create_error_response(f"Erro ao configurar: {str(e)}")
-
 def _format_project_info(index: int, project: dict) -> str:
     """Formata informações de um projeto para exibição"""
     path_display = project.get('path_with_namespace', project['path'])
@@ -627,21 +593,11 @@ def process_message(message: dict) -> dict | None:
 def _validate_environment():
     """Valida variáveis de ambiente necessárias"""
     if not GITLAB_TOKEN:
-        log_info("="*60)
-        log_info("⚠️  GitLab MCP Server - Configuração necessária")
-        log_info("="*60)
-        log_info("")
-        log_info("Execute o comando 'GitLab MCP: Configure GitLab' na Command Palette")
-        log_info("Isso criará o arquivo ~/.gitlab-mcp-config.json com suas credenciais.")
-        log_info("")
-        log_info("="*60)
+        log_error("ERRO: GITLAB_TOKEN não configurado")
         sys.exit(1)
-    else:
-        config_source = f"~/.gitlab-mcp-config.json" if CONFIG_FILE.exists() else "variáveis de ambiente"
-        log_info(f"✅ Credenciais carregadas de: {config_source}")
-        log_info(f"📡 API URL: {GITLAB_API_URL}")
-        log_info(f"📁 Grupo padrão: {DEFAULT_GROUP or '(não configurado)'}")
-        log_info(f"👤 Assignee padrão: {DEFAULT_ASSIGNEE or '(não configurado)'}")
+    
+    log_info(f"Variáveis de ambiente carregadas: API URL = {GITLAB_API_URL}")
+    log_info(f"Grupo padrão: {DEFAULT_GROUP}, Assignee padrão: {DEFAULT_ASSIGNEE}")
 
 def _process_stdin_line(line: str):
     """Processa uma linha do stdin"""

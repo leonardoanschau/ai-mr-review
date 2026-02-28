@@ -1,44 +1,45 @@
 # Changelog
 
-Todas as mudanças notáveis do projeto serão documentadas neste arquivo.
+All notable changes to the GitLab MCP extension will be documented in this file.
 
-O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
-e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [1.0.0] - 2026-02-26
 
-### ✨ Adicionado
-- Integração com GitLab via MCP Server
-- Criação de issues no GitLab com templates pré-configurados
-- Listagem de projetos do grupo CRM (recursivo)
-- Template padrão para User Stories com 9 seções:
-  - Objetivo
-  - Contexto
-  - Contratos de API (Request/Response)
-  - Dependências
-  - Tarefas
-  - Impactos e Compatibilidade
-  - Observações
-  - Métricas de Sucesso
-  - Critérios de Aceite
-- Wizard de configuração na primeira execução
-- Armazenamento seguro de tokens no VS Code Secret Storage
-- Integração com GitHub Copilot para geração de conteúdo
-- Output channel para logs do servidor MCP
-- Status bar indicator quando servidor está ativo
+### ✨ Added
+- GitLab integration via MCP Server
+- Create GitLab issues with pre-configured templates
+- List projects from GitLab groups (recursive)
+- Default template for User Stories with 9 sections:
+  - Objective
+  - Context
+  - API Contracts (Request/Response)
+  - Dependencies
+  - Tasks
+  - Impacts and Compatibility
+  - Observations
+  - Success Metrics
+  - Acceptance Criteria
+- Configuration wizard on first run
+- Secure token storage in VS Code Secret Storage
+- GitHub Copilot integration for content generation
+- Output channel for MCP server logs
+- Status bar indicator when server is active
 
-### 🔐 Segurança
-- Tokens GitLab armazenados de forma criptografada
-- Nenhuma credencial exposta no código
-- Variáveis sensíveis não versionadas
+### 🔐 Security
+- GitLab tokens stored encrypted
+- No credentials exposed in code
+- Sensitive variables not versioned
 
-### 📚 Documentação
-- README completo com instruções de instalação
-- Guia de configuração do GitLab token
-- Exemplos de uso com Copilot
+### 📚 Documentation
+- Complete README with installation instructions
+- GitLab token setup guide
+- Usage examples with Copilot
 
-### 🛠️ Comandos
-- `Varejo CRM: Configurar GitLab` - Abre wizard de configuração
-- `Varejo CRM: Criar Issue no GitLab` - Dicas de uso com Copilot
-- `Varejo CRM: Listar Projetos GitLab` - Dicas de uso com Copilot
-- `Varejo CRM: Mostrar Template de Issue` - Dicas de uso com Copilot
+### 🛠️ Commands
+- `GitLab MCP: Configure GitLab` - Open configuration wizard
+- `GitLab MCP: Create GitLab Issue` - Usage tips with Copilot
+- `GitLab MCP: List GitLab Projects` - Usage tips for project search
+- `GitLab MCP: Show Issue Template` - Display complete template
+

@@ -1,16 +1,14 @@
 #!/bin/bash
-# Script de instalação da extensão Varejo CRM MCP
-# Baixa a última versão do GitLab Releases e instala
+# Script de instalação da extensão GitLab MCP
+# Baixa a última versão do repositório e instala
 
 set -e
 
 VERSION="${1:-1.0.0}"
-GITLAB_URL="http://gitlab.dimed.com.br"
-PROJECT_PATH="grupopanvel/varejo/crm/varejo-crm-mcp"
-VSIX_NAME="varejo-crm-mcp-${VERSION}.vsix"
+VSIX_NAME="gitlab-mcp-${VERSION}.vsix"
 
-echo "🚀 Instalador Varejo CRM MCP v${VERSION}"
-echo "========================================"
+echo "🚀 Instalador GitLab MCP v${VERSION}"
+echo "======================================="
 echo ""
 
 # Verifica VS Code
@@ -97,9 +95,9 @@ echo "✅ Extensão instalada com sucesso!"
 echo ""
 echo "🎯 Próximos passos:"
 echo "   1. Reinicie o VS Code"
-echo "   2. Execute: Cmd+Shift+P → 'Varejo CRM: Configurar GitLab'"
+echo "   2. Execute: Cmd+Shift+P → 'GitLab MCP: Configure GitLab'"
 echo "   3. Preencha suas credenciais"
-echo "   4. Use o Copilot: '@workspace crie uma US no projeto X sobre Y'"
+echo "   4. Use o Copilot: '@workspace create a GitLab issue...'"
 echo ""
 echo "📚 Documentação completa:"
 echo "   ${GITLAB_URL}/${PROJECT_PATH}/-/blob/main/README.md"

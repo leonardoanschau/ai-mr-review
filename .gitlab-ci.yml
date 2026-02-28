@@ -1,4 +1,4 @@
-# GitLab CI/CD Pipeline para Varejo CRM MCP Extension
+# GitLab CI/CD Pipeline para GitLab MCP Extension
 
 stages:
   - test
@@ -6,7 +6,7 @@ stages:
   - release
 
 variables:
-  VSIX_NAME: "varejo-crm-mcp-${CI_COMMIT_TAG}.vsix"
+  VSIX_NAME: "gitlab-mcp-${CI_COMMIT_TAG}.vsix"
 
 # ========================================
 # Stage: Test
@@ -70,7 +70,7 @@ release:gitlab:
     - echo "Criando release ${CI_COMMIT_TAG}"
   release:
     tag_name: $CI_COMMIT_TAG
-    name: "Varejo CRM MCP v${CI_COMMIT_TAG}"
+    name: "GitLab MCP v${CI_COMMIT_TAG}"
     description: |
       ## 🚀 Release v${CI_COMMIT_TAG}
       
@@ -78,23 +78,16 @@ release:gitlab:
       
       **Via Script:**
       ```bash
-      curl -sL http://gitlab.dimed.com.br/grupopanvel/varejo/crm/varejo-crm-mcp/-/raw/main/scripts/install.sh | bash -s ${CI_COMMIT_TAG}
-      ```
-      
-      **Manual:**
-      ```bash
-      # Baixe o .vsix abaixo
       code --install-extension ${VSIX_NAME}
       ```
       
       ### 📝 Changelog
       
-      Veja [CHANGELOG.md](http://gitlab.dimed.com.br/grupopanvel/varejo/crm/varejo-crm-mcp/-/blob/${CI_COMMIT_TAG}/CHANGELOG.md)
+      See CHANGELOG.md for details
       
       ### 🔗 Links
       
-      - [Documentação](http://gitlab.dimed.com.br/grupopanvel/varejo/crm/varejo-crm-mcp/-/blob/${CI_COMMIT_TAG}/README.md)
-      - [Issues](http://gitlab.dimed.com.br/grupopanvel/varejo/crm/varejo-crm-mcp/-/issues)
+      - Documentation: See README.md in repository
     assets:
       links:
         - name: "${VSIX_NAME}"
@@ -116,6 +109,6 @@ release:gitlab:
 #     - |
 #       curl --header "PRIVATE-TOKEN: ${GITLAB_API_TOKEN}" \
 #            --upload-file ${VSIX_NAME} \
-#            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/varejo-crm-mcp/${CI_COMMIT_TAG}/${VSIX_NAME}"
+#            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/gitlab-mcp/${CI_COMMIT_TAG}/${VSIX_NAME}"
 #   only:
 #     - tags

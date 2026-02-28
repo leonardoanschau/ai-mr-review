@@ -1,180 +1,189 @@
-# 🚀 Varejo CRM MCP for VS Code
+# 🚀 GitLab MCP for VS Code
 
-**Versão 1.0.0** | MIT License
+**Version 1.0.0** | MIT License
 
-Ferramentas de produtividade para o time Varejo CRM do Grupo Panvel. Crie issues no GitLab de forma inteligente usando GitHub Copilot!
+GitLab productivity tools integrated with GitHub Copilot. Create issues, list projects, and use templates - all with natural language!
 
-## ✨ Funcionalidades
+## ✨ Features
 
-- 🎯 **Criação de Issues GitLab** - Use linguagem natural com Copilot
-- 📋 **Templates Completos** - User Stories, Bugs e Débito Técnico
-- 🔍 **Busca de Projetos** - Lista todos os projetos do grupo CRM recursivamente
-- 📡 **Contratos de API** - Templates incluem seções de Request/Response
-- 🤖 **Integração com Copilot** - IA gera conteúdo automaticamente
-- 🔐 **Seguro** - Tokens armazenados de forma criptografada
+- 🎯 **GitLab Issue Creation** - Use natural language with Copilot
+- 📋 **Complete Templates** - User Stories, Bugs, Technical Debt
+- 🔍 **Project Search** - List all projects recursively
+- 📡 **API Contracts** - Request/Response templates included
+- 🤖 **Copilot Integration** - AI generates content automatically
+- 🔐 **Secure** - Tokens stored encrypted in VS Code Secret Storage
 
-## 🎬 Começando
+---
 
-### 1️⃣ Instalação
+## 🎬 Quick Start
 
-**Opção A: VS Code Marketplace** (em breve)
+### 1️⃣ Installation
+
+**From VS Code Marketplace:**
 ```
-Extensions → Buscar "Varejo CRM MCP" → Install
+Extensions → Search "GitLab MCP" → Install
 ```
 
-**Opção B: VSIX Manual**
+**From VSIX:**
 ```bash
-# Baixe o .vsix do GitLab Releases
-code --install-extension varejo-crm-mcp-1.0.0.vsix
+code --install-extension gitlab-mcp-1.0.0.vsix
 ```
 
-### 2️⃣ Configuração (Primeira Vez)
+### 2️⃣ Configuration
 
-Após instalar, a extensão abrirá um wizard automaticamente. Configure:
+On first run, a wizard will open automatically:
 
-1. **GitLab URL**: `http://gitlab.dimed.com.br/api/v4`
-2. **GitLab Token**: Seu personal access token ([como obter](#-obter-gitlab-token))
-3. **Grupo Padrão**: `grupopanvel/varejo/crm`
-4. **Assignee Padrão**: Seu username GitLab
+1. **GitLab URL**: Your GitLab API URL (e.g., `https://gitlab.com/api/v4`)
+2. **GitLab Token**: Personal access token ([how to get](#-get-gitlab-token))
+3. **Default Group**: Optional (e.g., `mycompany/myteam`)
+4. **Default Assignee**: Optional (your username)
 
-✅ **Pronto!** A extensão está configurada e o servidor MCP rodando.
+### 3️⃣ Usage with Copilot
 
-### 3️⃣ Uso com GitHub Copilot
-
-Abra o **Copilot Chat** (`Ctrl+Shift+I`) e use linguagem natural:
+Open **Copilot Chat** (`Ctrl+Shift+I` / `Cmd+Shift+I`):
 
 ```
-@workspace crie uma US no projeto Acompanhamento sobre implementar cache Redis
+@workspace create a user story in project MyApp about implementing Redis cache
 ```
 
 ```
-@workspace liste os projetos GitLab do CRM
+@workspace list GitLab projects
 ```
 
 ```
-@workspace mostre o template de issues do GitLab
+@workspace show GitLab issue template
 ```
 
-**A IA vai:**
-1. Listar os projetos disponíveis
-2. Você escolhe qual projeto
-3. IA gera título e descrição completos
-4. Cria a issue automaticamente
+**The AI will:**
+1. List available projects
+2. You choose the project
+3. AI generates title and description
+4. Creates the issue automatically
 
-## 📋 Template de Issues
+---
 
-Todas as issues criadas seguem nosso template padrão com 9 seções:
+## 📋 Issue Template
 
-- 🎯 **Objetivo** - O que será feito e para quê
-- 📌 **Contexto** - Situação atual e necessidade
-- 📡 **Contratos de API** - Request/Response (se aplicável)
-- 🔗 **Dependências** - Serviços, bibliotecas, pré-requisitos
-- ✅ **Tarefas** - Checklist técnico
-- ⚡ **Impactos e Compatibilidade** - Breaking changes, migrações
-- ⚠️ **Observações** - Riscos e pontos de atenção
-- 📊 **Métricas de Sucesso** - SLAs, monitoramento
-- ✔️ **Critérios de Aceite** - Como validar
+All issues follow a comprehensive template with 9 sections:
 
-> **Nota:** A IA avalia o contexto e inclui apenas seções relevantes. Nem toda US precisa de todas as seções.
+- 🎯 **Objective** - What and why
+- 📌 **Context** - Current situation
+- 📡 **API Contracts** - Request/Response (if applicable)
+- 🔗 **Dependencies** - External services, prerequisites
+- ✅ **Tasks** - Technical checklist
+- ⚡ **Impacts** - Breaking changes, migrations
+- ⚠️ **Observations** - Risks and considerations
+- 📊 **Success Metrics** - SLAs, monitoring
+- ✔️ **Acceptance Criteria** - How to validate
 
-## 🔐 Obter GitLab Token
+> **Note:** AI evaluates context and includes only relevant sections.
 
-1. Acesse: http://gitlab.dimed.com.br/-/user_settings/personal_access_tokens
-2. Clique em **"Add new token"**
+---
+
+## 🔐 Get GitLab Token
+
+1. Go to: Your GitLab → Settings → Access Tokens
+2. Click **"Add new token"**
 3. Configure:
    - **Name**: `VS Code MCP`
-   - **Scopes**: Marque `api`, `read_user`, `write_repository`
-   - **Expiration**: 1 ano (recomendado)
-4. Clique em **"Create personal access token"**
-5. **Copie o token** (só aparece uma vez!)
-6. Cole no wizard da extensão
+   - **Scopes**: `api`, `read_user`, `write_repository`
+   - **Expiration**: 1 year (recommended)
+4. **Copy the token** (shown only once!)
+5. Paste in the extension wizard
 
-## ⚙️ Configuração Manual
+---
 
-Se precisar reconfigurar:
+## ⚙️ Manual Configuration
 
 **Command Palette** (`Cmd+Shift+P` / `Ctrl+Shift+P`):
 ```
-Varejo CRM: Configurar GitLab
+GitLab MCP: Configure GitLab
 ```
 
-**Ou edite manualmente:**
+**Or edit settings manually:**
 ```json
-// settings.json
 {
-  "varejocrm.gitlab.url": "http://gitlab.dimed.com.br/api/v4",
-  "varejocrm.gitlab.defaultGroup": "grupopanvel/varejo/crm",
-  "varejocrm.gitlab.defaultAssignee": "seu-username"
+  "gitlabmcp.gitlab.url": "https://gitlab.com/api/v4",
+  "gitlabmcp.gitlab.defaultGroup": "mycompany/myteam",
+  "gitlabmcp.gitlab.defaultAssignee": "your-username"
 }
 ```
 
-Token via Command Palette: `Varejo CRM: Configurar GitLab`
+Token via Command Palette: `GitLab MCP: Configure GitLab`
 
-## 🛠️ Comandos Disponíveis
+---
 
-| Comando | Descrição |
-|---------|-----------|
-| `Varejo CRM: Configurar GitLab` | Abre wizard de configuração |
-| `Varejo CRM: Criar Issue no GitLab` | Dicas de uso com Copilot |
-| `Varejo CRM: Listar Projetos GitLab` | Dicas de busca de projetos |
-| `Varejo CRM: Mostrar Template de Issue` | Exibe template completo |
+## 🛠️ Commands
+
+| Command | Description |
+|---------|-------------|
+| `GitLab MCP: Configure GitLab` | Open configuration wizard |
+| `GitLab MCP: Create GitLab Issue` | Usage tips with Copilot |
+| `GitLab MCP: List GitLab Projects` | Usage tips for project search |
+| `GitLab MCP: Show Issue Template` | Display complete template |
+
+---
 
 ## 🐛 Troubleshooting
 
-### ❌ Server não inicia
+### ❌ Server doesn't start
 
-1. Verifique o **Output Channel**: `View → Output → Varejo CRM MCP Server`
-2. Confirme que Python está instalado: `python3 --version`
-3. Reconfigure: `Varejo CRM: Configurar GitLab`
+1. Check **Output Channel**: `View → Output → GitLab MCP Server`
+2. Verify Python is installed: `python3 --version`
+3. Reconfigure: `GitLab MCP: Configure GitLab`
 
-### ❌ Copilot não reconhece as tools
+### ❌ Copilot doesn't recognize tools
 
-1. Reinicie o VS Code
-2. Verifique se o servidor está rodando (status bar: ✅ CRM MCP)
-3. Verifique os logs no Output Channel
+1. Restart VS Code
+2. Check server is running (status bar: ✔️ GitLab MCP)
+3. View logs in Output Channel
 
-### ❌ Projeto não encontrado
+### ❌ Project not found
 
-Use o comando exato da lista:
+Use exact name from list:
 ```
-@workspace liste os projetos GitLab
+@workspace list GitLab projects
 ```
+Copy exact project name from returned list.
 
-Copie o nome exato do projeto da lista retornada.
+---
 
-## 📦 Build Manual (Desenvolvedores)
+## 📦 Building from Source
 
 ```bash
-# Clone o repositório
-git clone https://gitlab.dimed.com.br/grupopanvel/varejo/crm/varejo-crm-mcp
-cd varejo-crm-mcp
+# Clone repository
+git clone <your-repo>
+cd gitlab-mcp
 
-# Instale dependências
+# Install dependencies
 npm install
 pip install -r requirements.txt
 
 # Compile TypeScript
 npm run compile
 
-# Gere o .vsix
+# Generate .vsix
 npm run package
 
-# Instale localmente
-code --install-extension varejo-crm-mcp-1.0.0.vsix
+# Install locally
+code --install-extension gitlab-mcp-1.0.0.vsix
 ```
+
+---
 
 ## 📝 Changelog
 
-Veja CHANGELOG.md para histórico de versões.
+See CHANGELOG.md for version history.
 
-## 🤝 Contribuindo
+## 🤝 Contributing
 
-Este projeto é mantido pelo time Varejo CRM.
+Contributions welcome! Open an issue or submit a pull request.
 
-## 📄 Licença
+## 📄 License
 
 MIT License
 
-## 👥 Time
+---
 
-Desenvolvido com ❤️ pelo time **Varejo CRM** do Grupo Panvel.
+**Questions?** Open an issue on the repository! 🚀
+

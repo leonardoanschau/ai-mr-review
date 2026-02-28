@@ -1,9 +1,9 @@
 {
-  "name": "varejo-crm-mcp",
-  "displayName": "Varejo CRM MCP Tools",
-  "description": "Ferramentas de produtividade para o time Varejo CRM - Criação de issues GitLab, templates e mais",
+  "name": "gitlab-mcp",
+  "displayName": "GitLab MCP Tools",
+  "description": "GitLab productivity tools - Create issues, list projects, and templates using GitHub Copilot",
   "version": "1.0.0",
-  "publisher": "panvel",
+  "publisher": "AnschauTI",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -17,8 +17,8 @@
     "user stories",
     "mcp",
     "copilot",
-    "panvel",
-    "crm"
+    "project management",
+    "productivity"
   ],
   "activationEvents": [
     "onStartupFinished"
@@ -27,54 +27,54 @@
   "contributes": {
     "commands": [
       {
-        "command": "varejocrm.configure",
-        "title": "Configurar GitLab",
-        "category": "Varejo CRM"
+        "command": "gitlabmcp.configure",
+        "title": "Configure GitLab",
+        "category": "GitLab MCP"
       },
       {
-        "command": "varejocrm.createIssue",
-        "title": "Criar Issue no GitLab",
-        "category": "Varejo CRM"
+        "command": "gitlabmcp.createIssue",
+        "title": "Create GitLab Issue",
+        "category": "GitLab MCP"
       },
       {
-        "command": "varejocrm.listProjects",
-        "title": "Listar Projetos GitLab",
-        "category": "Varejo CRM"
+        "command": "gitlabmcp.listProjects",
+        "title": "List GitLab Projects",
+        "category": "GitLab MCP"
       },
       {
-        "command": "varejocrm.showTemplate",
-        "title": "Mostrar Template de Issue",
-        "category": "Varejo CRM"
+        "command": "gitlabmcp.showTemplate",
+        "title": "Show Issue Template",
+        "category": "GitLab MCP"
       }
     ],
     "configuration": {
-      "title": "Varejo CRM MCP",
+      "title": "GitLab MCP",
       "properties": {
-        "varejocrm.gitlab.url": {
+        "gitlabmcp.gitlab.url": {
           "type": "string",
           "default": "http://gitlab.dimed.com.br/api/v4",
           "description": "URL da API do GitLab",
           "order": 1
         },
-        "varejocrm.gitlab.defaultGroup": {
+        "gitlabmcp.gitlab.defaultGroup": {
           "type": "string",
-          "default": "grupopanvel/varejo/crm",
+          "default": "",
           "description": "Grupo padrão do GitLab (com subgrupos recursivos)",
           "order": 2
         },
-        "varejocrm.gitlab.defaultAssignee": {
+        "gitlabmcp.gitlab.defaultAssignee": {
           "type": "string",
           "default": "",
           "description": "Username padrão do assignee (vazio = você)",
           "order": 3
         },
-        "varejocrm.mcp.pythonPath": {
+        "gitlabmcp.mcp.pythonPath": {
           "type": "string",
           "default": "python3",
           "description": "Caminho para o executável Python",
           "order": 4
         },
-        "varejocrm.mcp.serverPath": {
+        "gitlabmcp.mcp.serverPath": {
           "type": "string",
           "default": "",
           "description": "Caminho para o crm_mcp_server.py (vazio = detecta automaticamente)",
@@ -85,16 +85,16 @@
     "menus": {
       "commandPalette": [
         {
-          "command": "varejocrm.configure"
+          "command": "gitlabmcp.configure"
         },
         {
-          "command": "varejocrm.createIssue"
+          "command": "gitlabmcp.createIssue"
         },
         {
-          "command": "varejocrm.listProjects"
+          "command": "gitlabmcp.listProjects"
         },
         {
-          "command": "varejocrm.showTemplate"
+          "command": "gitlabmcp.showTemplate"
         }
       ]
     }

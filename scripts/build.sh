@@ -3,7 +3,7 @@
 
 set -e
 
-echo "🚀 Build da extensão Varejo CRM MCP"
+echo "🚀 Build da extensão GitLab MCP"
 echo "=================================="
 
 # Verifica Node.js
@@ -43,6 +43,12 @@ npm run compile
 
 echo ""
 
+# Compila binário Python
+echo "🔨 Compilando binário Python..."
+./scripts/build-binary.sh
+
+echo ""
+
 # Empacota extensão
 echo "📦 Gerando arquivo .vsix..."
 npm run package
@@ -55,5 +61,5 @@ ls -lh *.vsix | tail -1
 
 echo ""
 echo "🎯 Para instalar:"
-echo "   code --install-extension varejo-crm-mcp-1.0.0.vsix"
+echo "   code --install-extension gitlab-mcp-1.0.0.vsix"
 echo ""

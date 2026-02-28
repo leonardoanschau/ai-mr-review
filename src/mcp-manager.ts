@@ -1,145 +1,208 @@
 import * as vscode from 'vscode';
-import * as child_process from 'child_process';
 import * as path from 'path';
+import * as fs from 'fs';
+import * as os from 'os';
 import { ConfigurationManager } from './configuration';
 
 export class MCPManager {
-    private mcpProcess: child_process.ChildProcess | undefined;
     private outputChannel: vscode.OutputChannel;
+    private isRegistered: boolean = false;
 
     constructor(
         private context: vscode.ExtensionContext,
         private configManager: ConfigurationManager
     ) {
-        this.outputChannel = vscode.window.createOutputChannel('Varejo CRM MCP Server');
+        this.outputChannel = vscode.window.createOutputChannel('GitLab MCP Server');
         context.subscriptions.push(this.outputChannel);
     }
 
     /**
-     * Inicia o servidor MCP
+     * Registra o servidor MCP no mcp.json
+     * O VS Code/Copilot é quem gerencia o lifecycle do servidor
      */
     async start(): Promise<void> {
-        if (this.mcpProcess) {
-            this.outputChannel.appendLine('⚠️ Servidor MCP já está rodando');
+        if (this.isRegistered) {
+            this.outputChannel.appendLine('⚠️ Servidor MCP já está registrado');
             return;
         }
 
         try {
             const config = await this.configManager.getConfiguration();
             if (!config) {
-                throw new Error('Configuração não encontrada. Execute "Varejo CRM: Configurar GitLab"');
+                throw new Error('Configuration not found. Run "GitLab MCP: Configure GitLab"');
             }
 
-            // Valida se o script Python existe
-            const serverPath = this.getServerScriptPath();
-            this.outputChannel.appendLine(`📂 Caminho do servidor: ${serverPath}`);
+            // Get binary path
+            const binaryPath = this.getServerBinaryPath();
+            this.outputChannel.appendLine(`📂 Server binary: ${binaryPath}`);
 
-            // Obtém comando Python
-            const pythonPath = vscode.workspace.getConfiguration('varejocrm').get<string>('mcp.pythonPath') || 'python3';
+            // Check if binary exists
+            if (!fs.existsSync(binaryPath)) {
+                throw new Error(`Server binary not found at: ${binaryPath}`);
+            }
+
+            this.outputChannel.appendLine(`🚀 Registering GitLab MCP Server in mcp.json...`);
+
+            // Registra no mcp.json (com env vars)
+            await this.registerMCPServer(binaryPath, config);
             
-            this.outputChannel.appendLine(`🐍 Python: ${pythonPath}`);
-            this.outputChannel.appendLine(`🚀 Iniciando servidor MCP...`);
-
-            // Cria arquivo de configuração MCP
-            const mcpConfigPath = await this.configManager.createMCPConfigFile();
-            this.outputChannel.appendLine(`⚙️ Configuração MCP: ${mcpConfigPath}`);
-
-            // Prepara variáveis de ambiente
-            const env = {
-                ...process.env,
-                GITLAB_TOKEN: config.token,
-                GITLAB_API_URL: config.url,
-                GITLAB_DEFAULT_GROUP: config.defaultGroup,
-                GITLAB_DEFAULT_ASSIGNEE: config.defaultAssignee,
-            };
-
-            // Inicia processo Python
-            this.mcpProcess = child_process.spawn(pythonPath, [serverPath], {
-                env,
-                stdio: ['pipe', 'pipe', 'pipe']
-            });
-
-            // Monitora stdout
-            this.mcpProcess.stdout?.on('data', (data) => {
-                this.outputChannel.appendLine(`[STDOUT] ${data.toString()}`);
-            });
-
-            // Monitora stderr (logs do servidor)
-            this.mcpProcess.stderr?.on('data', (data) => {
-                const message = data.toString();
-                this.outputChannel.appendLine(`[LOG] ${message}`);
-            });
-
-            // Monitora erro
-            this.mcpProcess.on('error', (error) => {
-                this.outputChannel.appendLine(`❌ Erro: ${error.message}`);
-                vscode.window.showErrorMessage(`Erro no servidor MCP: ${error.message}`);
-            });
-
-            // Monitora exit
-            this.mcpProcess.on('exit', (code) => {
-                this.outputChannel.appendLine(`⛔ Servidor MCP encerrado (código: ${code})`);
-                this.mcpProcess = undefined;
-                
-                if (code !== 0 && code !== null) {
-                    vscode.window.showWarningMessage(
-                        `Servidor MCP encerrado inesperadamente (código: ${code})`
-                    );
-                }
-            });
-
-            this.outputChannel.appendLine(`✅ Servidor MCP iniciado (PID: ${this.mcpProcess.pid})`);
+            this.isRegistered = true;
+            this.outputChannel.appendLine(`✅ Servidor registrado! O VS Code gerenciará o processo.`);
             this.outputChannel.show(true);
 
             // Registra no status bar
             const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-            statusBarItem.text = '$(check) CRM MCP';
-            statusBarItem.tooltip = 'Varejo CRM MCP Server está rodando';
-            statusBarItem.command = 'varejocrm.configure';
+            statusBarItem.text = '$(check) GitLab MCP';
+            statusBarItem.tooltip = 'GitLab MCP Server is registered';
+            statusBarItem.command = 'gitlabmcp.configure';
             statusBarItem.show();
             this.context.subscriptions.push(statusBarItem);
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            this.outputChannel.appendLine(`❌ Falha ao iniciar servidor: ${errorMessage}`);
+            this.outputChannel.appendLine(`❌ Falha ao registrar servidor: ${errorMessage}`);
             throw error;
         }
     }
 
     /**
-     * Para o servidor MCP
+     * Remove o registro do servidor MCP do mcp.json
      */
     async stop(): Promise<void> {
-        if (!this.mcpProcess) {
+        if (!this.isRegistered) {
             return;
         }
 
-        this.outputChannel.appendLine('⏹️ Parando servidor MCP...');
+        this.outputChannel.appendLine('⏹️ Removendo registro do servidor MCP...');
         
-        this.mcpProcess.kill();
-        this.mcpProcess = undefined;
+        await this.unregisterMCPServer();
         
-        this.outputChannel.appendLine('✅ Servidor MCP parado');
+        this.isRegistered = false;
+        this.outputChannel.appendLine('✅ Servidor desregistrado do mcp.json');
+    }
+
+    /**
+     * Registra o servidor MCP no mcp.json para integração com Copilot
+     */
+    private async registerMCPServer(binaryPath: string, config: any): Promise<void> {
+        try {
+            const mcpConfigPath = this.getMCPConfigPath();
+            
+            // Lê mcp.json atual ou cria estrutura vazia
+            let mcpConfig: any = { servers: {}, inputs: [] };
+            
+            if (fs.existsSync(mcpConfigPath)) {
+                const content = fs.readFileSync(mcpConfigPath, 'utf8');
+                try {
+                    mcpConfig = JSON.parse(content);
+                } catch (e) {
+                    this.outputChannel.appendLine(`⚠️ Erro ao ler mcp.json, criando novo...`);
+                }
+            }
+
+            // Adiciona/atualiza entrada do GitLab MCP (SEM env vars - servidor lê de ~/.gitlab-mcp-config.json)
+            mcpConfig.servers = mcpConfig.servers || {};
+            mcpConfig.servers['gitlab-mcp-server'] = {
+                command: binaryPath,
+                args: [],
+                type: 'stdio'
+            };
+
+            // Salva mcp.json
+            const dir = path.dirname(mcpConfigPath);
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+            }
+            
+            fs.writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, '\t'));
+            this.outputChannel.appendLine(`✅ Servidor registrado no mcp.json: ${mcpConfigPath}`);
+            this.outputChannel.appendLine(`🔐 Credenciais salvas em ~/.gitlab-mcp-config.json (não no mcp.json!)`);
+            this.outputChannel.appendLine(`�📝 O VS Code gerenciará o lifecycle do servidor`);
+            
+        } catch (error) {
+            this.outputChannel.appendLine(`⚠️ Erro ao registrar no mcp.json: ${error}`);
+            throw error;
+        }
+    }
+
+    /**
+     * Remove o registro do servidor MCP do mcp.json
+     */
+    private async unregisterMCPServer(): Promise<void> {
+        try {
+            const mcpConfigPath = this.getMCPConfigPath();
+            
+            if (!fs.existsSync(mcpConfigPath)) {
+                return;
+            }
+
+            const content = fs.readFileSync(mcpConfigPath, 'utf8');
+            const mcpConfig = JSON.parse(content);
+
+            // Remove servidor
+            if (mcpConfig.servers && mcpConfig.servers['gitlab-mcp-server']) {
+                delete mcpConfig.servers['gitlab-mcp-server'];
+                this.outputChannel.appendLine(`✅ Servidor removido do mcp.json`);
+            }
+            
+            fs.writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, '\t'));
+        } catch (error) {
+            this.outputChannel.appendLine(`⚠️ Erro ao remover do mcp.json: ${error}`);
+        }
+    }
+
+    /**
+     * Obtém caminho do mcp.json do VS Code
+     */
+    private getMCPConfigPath(): string {
+        const platform = process.platform;
+        let configDir: string;
+
+        if (platform === 'darwin') {
+            // macOS
+            configDir = path.join(os.homedir(), 'Library', 'Application Support', 'Code', 'User');
+        } else if (platform === 'win32') {
+            // Windows
+            configDir = path.join(process.env.APPDATA || '', 'Code', 'User');
+        } else {
+            // Linux
+            configDir = path.join(os.homedir(), '.config', 'Code', 'User');
+        }
+
+        return path.join(configDir, 'mcp.json');
     }
 
     /**
      * Obtém caminho do script Python do servidor MCP
      */
-    private getServerScriptPath(): string {
-        const configuredPath = vscode.workspace.getConfiguration('varejocrm').get<string>('mcp.serverPath');
+    private getServerBinaryPath(): string {
+        const configuredPath = vscode.workspace.getConfiguration('gitlabmcp').get<string>('mcp.serverPath');
         
         if (configuredPath) {
             return configuredPath;
         }
 
-        // Caminho padrão: extensão/crm_mcp_server.py
-        return path.join(this.context.extensionPath, 'crm_mcp_server.py');
+        // Detect OS and return appropriate binary
+        const platform = process.platform;
+        let binaryName: string;
+        
+        if (platform === 'darwin') {
+            binaryName = 'gitlab-mcp-server';
+        } else if (platform === 'win32') {
+            binaryName = 'gitlab-mcp-server.exe';
+        } else {
+            // Linux
+            binaryName = 'gitlab-mcp-server';
+        }
+
+        // Default path: extension/bin/gitlab-mcp-server
+        return path.join(this.context.extensionPath, 'bin', binaryName);
     }
 
     /**
-     * Verifica se o servidor está rodando
+     * Verifica se o servidor está registrado
      */
     isRunning(): boolean {
-        return this.mcpProcess !== undefined;
+        return this.isRegistered;
     }
 }

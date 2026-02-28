@@ -9,7 +9,7 @@ export interface GitLabConfiguration {
 
 export class ConfigurationManager {
     private static readonly SECRET_KEY_TOKEN = 'gitlab.token';
-    private static readonly CONFIG_SECTION = 'varejocrm';
+    private static readonly CONFIG_SECTION = 'gitlabmcp';
 
     constructor(private context: vscode.ExtensionContext) {}
 
@@ -47,9 +47,9 @@ export class ConfigurationManager {
         const config = vscode.workspace.getConfiguration(ConfigurationManager.CONFIG_SECTION);
         
         return {
-            url: config.get('gitlab.url') || 'http://gitlab.dimed.com.br/api/v4',
+            url: config.get('gitlab.url') || 'https://gitlab.com/api/v4',
             token,
-            defaultGroup: config.get('gitlab.defaultGroup') || 'grupopanvel/varejo/crm',
+            defaultGroup: config.get('gitlab.defaultGroup') || '',
             defaultAssignee: config.get('gitlab.defaultAssignee') || '',
         };
     }
@@ -61,8 +61,8 @@ export class ConfigurationManager {
         // 1. GitLab URL
         const url = await vscode.window.showInputBox({
             prompt: 'GitLab API URL',
-            value: 'http://gitlab.dimed.com.br/api/v4',
-            placeHolder: 'http://gitlab.dimed.com.br/api/v4',
+            value: 'https://gitlab.com/api/v4',
+            placeHolder: 'https://gitlab.com/api/v4',
             ignoreFocusOut: true,
             validateInput: (value) => {
                 if (!value) return 'URL é obrigatória';
@@ -94,24 +94,23 @@ export class ConfigurationManager {
 
         // 3. Grupo padrão
         const defaultGroup = await vscode.window.showInputBox({
-            prompt: 'Grupo padrão do GitLab (com subgrupos recursivos)',
-            value: 'grupopanvel/varejo/crm',
-            placeHolder: 'grupopanvel/varejo/crm',
+            prompt: 'Default GitLab group (with recursive subgroups) - optional',
+            value: '',
+            placeHolder: 'e.g., mycompany/myteam',
             ignoreFocusOut: true,
             validateInput: (value) => {
-                if (!value) return 'Grupo é obrigatório';
-                return null;
+                return null; // Optional field
             }
         });
 
-        if (!defaultGroup) {
+        if (defaultGroup === undefined) {
             return false;
         }
 
         // 4. Assignee padrão
         const defaultAssignee = await vscode.window.showInputBox({
-            prompt: 'Username do assignee padrão (ou deixe vazio)',
-            placeHolder: 'seu-username',
+            prompt: 'Default assignee username (leave empty for none)',
+            placeHolder: 'your-username',
             ignoreFocusOut: true
         });
 
@@ -124,9 +123,33 @@ export class ConfigurationManager {
         // Salva token no Secret Storage
         await this.setToken(token);
 
-        vscode.window.showInformationMessage('✅ Configuração salva com sucesso!');
+        // IMPORTANTE: Também cria arquivo de config para o servidor Python ler
+        await this.createGitLabConfigFile(url, token, defaultGroup || '', defaultAssignee || '');
+
+        vscode.window.showInformationMessage('✅ Configuration saved successfully!');
         
         return true;
+    }
+
+    /**
+     * Cria arquivo ~/.gitlab-mcp-config.json para o servidor Python ler
+     */
+    private async createGitLabConfigFile(url: string, token: string, defaultGroup: string, defaultAssignee: string): Promise<void> {
+        const os = require('os');
+        const fs = require('fs').promises;
+        const path = require('path');
+
+        const configPath = path.join(os.homedir(), '.gitlab-mcp-config.json');
+        
+        const configContent = {
+            token: token,
+            api_url: url,
+            default_group: defaultGroup,
+            default_assignee: defaultAssignee
+        };
+
+        await fs.writeFile(configPath, JSON.stringify(configContent, null, 2), 'utf8');
+        console.log(`GitLab config file created at: ${configPath}`);
     }
 
     /**
@@ -140,8 +163,8 @@ export class ConfigurationManager {
 
         const mcpConfig = {
             mcpServers: {
-                "varejo-crm-mcp": {
-                    command: vscode.workspace.getConfiguration('varejocrm').get('mcp.pythonPath') || 'python3',
+                "gitlab-mcp": {
+                    command: vscode.workspace.getConfiguration('gitlabmcp').get('mcp.pythonPath') || 'python3',
                     args: [this.getServerScriptPath()],
                     env: {
                         GITLAB_TOKEN: config.token,
@@ -170,7 +193,7 @@ export class ConfigurationManager {
      * Obtém caminho do script Python do servidor MCP
      */
     private getServerScriptPath(): string {
-        const configuredPath = vscode.workspace.getConfiguration('varejocrm').get<string>('mcp.serverPath');
+        const configuredPath = vscode.workspace.getConfiguration('gitlabmcp').get<string>('mcp.serverPath');
         
         if (configuredPath) {
             return configuredPath;

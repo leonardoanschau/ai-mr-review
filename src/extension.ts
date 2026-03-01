@@ -1,13 +1,14 @@
 import * as vscode from 'vscode';
-import { ConfigurationManager } from './configuration';
+import { GitLabMCPConfigManager } from './config-manager';
 import { MCPManager } from './mcp-manager';
 
 let mcpManager: MCPManager | undefined;
+let configManager: GitLabMCPConfigManager | undefined;
 
 export async function activate(context: vscode.ExtensionContext) {
     console.log('GitLab MCP extension activated');
 
-    const configManager = new ConfigurationManager(context);
+    configManager = new GitLabMCPConfigManager(context);
 
     // Verifica se está configurado
     const isConfigured = await configManager.isConfigured();
@@ -21,7 +22,12 @@ export async function activate(context: vscode.ExtensionContext) {
         );
 
         if (configure === 'Configure Now') {
-            await configManager.showConfigurationWizard();
+            const success = await configManager.configureInteractively();
+            if (success) {
+                // Inicia servidor após configuração
+                mcpManager = new MCPManager(context, configManager);
+                await mcpManager.start();
+            }
         }
     } else {
         // Inicia servidor MCP
@@ -30,27 +36,91 @@ export async function activate(context: vscode.ExtensionContext) {
             await mcpManager.start();
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            vscode.window.showErrorMessage(`Erro ao iniciar MCP Server: ${errorMessage}`);
+            vscode.window.showErrorMessage(`Failed to start MCP Server: ${errorMessage}`);
         }
     }
 
-    // Registra comandos
+    // ======================================================================
+    // Comando: Configure Server
+    // ======================================================================
     context.subscriptions.push(
         vscode.commands.registerCommand('gitlabmcp.configure', async () => {
-            await configManager.showConfigurationWizard();
+            if (!configManager) {
+                return;
+            }
+
+            const success = await configManager.configureInteractively();
             
-            // Reinicia MCP se já estava rodando
-            if (mcpManager) {
-                await mcpManager.stop();
-                mcpManager = new MCPManager(context, configManager);
-                await mcpManager.start();
-            } else {
-                mcpManager = new MCPManager(context, configManager);
-                await mcpManager.start();
+            if (success) {
+                // Reinicia MCP se já estava rodando
+                if (mcpManager) {
+                    try {
+                        await mcpManager.restart();
+                        vscode.window.showInformationMessage('✅ GitLab MCP restarted with new configuration!');
+                    } catch (error) {
+                        const errorMessage = error instanceof Error ? error.message : String(error);
+                        vscode.window.showErrorMessage(`Failed to restart server: ${errorMessage}`);
+                    }
+                } else {
+                    // Primeiro start
+                    try {
+                        mcpManager = new MCPManager(context, configManager);
+                        await mcpManager.start();
+                        vscode.window.showInformationMessage('✅ GitLab MCP started successfully!');
+                    } catch (error) {
+                        const errorMessage = error instanceof Error ? error.message : String(error);
+                        vscode.window.showErrorMessage(`Failed to start server: ${errorMessage}`);
+                    }
+                }
             }
         })
     );
 
+    // ======================================================================
+    // Comando: Show Configuration
+    // ======================================================================
+    context.subscriptions.push(
+        vscode.commands.registerCommand('gitlabmcp.showConfiguration', async () => {
+            if (!configManager) {
+                return;
+            }
+            await configManager.showConfiguration();
+        })
+    );
+
+    // ======================================================================
+    // Comando: Clear Configuration
+    // ======================================================================
+    context.subscriptions.push(
+        vscode.commands.registerCommand('gitlabmcp.clearConfiguration', async () => {
+            if (!configManager) {
+                return;
+            }
+
+            const confirm = await vscode.window.showWarningMessage(
+                '⚠️ This will delete all GitLab MCP credentials from secure storage. Continue?',
+                { modal: true },
+                'Yes, Delete',
+                'Cancel'
+            );
+
+            if (confirm === 'Yes, Delete') {
+                await configManager.clearConfiguration();
+                
+                // Para o servidor se estiver rodando
+                if (mcpManager) {
+                    await mcpManager.stop();
+                    mcpManager = undefined;
+                }
+
+                vscode.window.showInformationMessage('✅ Configuration cleared. Run "Configure Server" to set up again.');
+            }
+        })
+    );
+
+    // ======================================================================
+    // Comandos informativos (direcionam para uso no Chat)
+    // ======================================================================
     context.subscriptions.push(
         vscode.commands.registerCommand('gitlabmcp.createIssue', () => {
             vscode.window.showInformationMessage(

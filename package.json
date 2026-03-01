@@ -28,8 +28,21 @@
     "commands": [
       {
         "command": "gitlabmcp.configure",
-        "title": "Configure GitLab",
-        "category": "GitLab MCP"
+        "title": "Configure Server (Secure)",
+        "category": "GitLab MCP",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "gitlabmcp.showConfiguration",
+        "title": "Show Configuration",
+        "category": "GitLab MCP",
+        "icon": "$(info)"
+      },
+      {
+        "command": "gitlabmcp.clearConfiguration",
+        "title": "Clear Configuration",
+        "category": "GitLab MCP",
+        "icon": "$(trash)"
       },
       {
         "command": "gitlabmcp.createIssue",
@@ -86,6 +99,12 @@
       "commandPalette": [
         {
           "command": "gitlabmcp.configure"
+        },
+        {
+          "command": "gitlabmcp.showConfiguration"
+        },
+        {
+          "command": "gitlabmcp.clearConfiguration"
         },
         {
           "command": "gitlabmcp.createIssue"

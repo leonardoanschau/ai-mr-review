@@ -10,41 +10,15 @@ import sys
 import os
 from typing import Any
 import requests
-from pathlib import Path
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.backends import default_backend
+import base64
 
 # ============================================================================
 # Configurações e Constantes
 # ============================================================================
-
-# Caminho do arquivo de configuração criado pela extensão VS Code
-CONFIG_FILE = Path.home() / ".gitlab-mcp-config.json"
-
-def load_config() -> dict:
-    """Carrega configuração do arquivo ~/.gitlab-mcp-config.json"""
-    print(f"DEBUG: Tentando ler config de: {CONFIG_FILE}", file=sys.stderr)
-    print(f"DEBUG: Arquivo existe? {CONFIG_FILE.exists()}", file=sys.stderr)
-    if CONFIG_FILE.exists():
-        try:
-            with open(CONFIG_FILE, 'r') as f:
-                config_data = json.load(f)
-                print(f"DEBUG: Config carregado com sucesso: API URL = {config_data.get('api_url')}, Group = {config_data.get('default_group')}", file=sys.stderr)
-                return config_data
-        except Exception as e:
-            print(f"ERROR: Erro ao carregar config de {CONFIG_FILE}: {e}", file=sys.stderr)
-    else:
-        print(f"DEBUG: Arquivo não existe, retornando dict vazio", file=sys.stderr)
-    return {}
-
-# Lê configurações do arquivo OU variáveis de ambiente (fallback)
-_config = load_config()
-print(f"DEBUG: Config retornado: {_config}", file=sys.stderr)
-GITLAB_TOKEN = _config.get("token") or os.getenv("GITLAB_TOKEN")
-GITLAB_API_URL = _config.get("api_url") or os.getenv("GITLAB_API_URL", "https://gitlab.com/api/v4")
-DEFAULT_GROUP = _config.get("default_group") or os.getenv("GITLAB_DEFAULT_GROUP", "")
-DEFAULT_ASSIGNEE = _config.get("default_assignee") or os.getenv("GITLAB_DEFAULT_ASSIGNEE", "")
-print(f"DEBUG: Após processing - API URL: {GITLAB_API_URL}, Group: {DEFAULT_GROUP}", file=sys.stderr)
-
-HEADERS = {"PRIVATE-TOKEN": GITLAB_TOKEN}
 
 # Constantes para configurações de API
 MAX_PROJECTS_PER_PAGE = 100
@@ -73,6 +47,25 @@ def log_error(message: str):
 def log_info(message: str):
     """Log informativo para stderr (não interfere com MCP stdout)"""
     print(f"INFO: {message}", file=sys.stderr)
+
+# ============================================================================
+# Funções de Credenciais
+# ============================================================================
+
+def get_gitlab_credentials() -> tuple[str, str, str, str]:
+    """
+    Lê credenciais das variáveis de ambiente
+    """
+    token = os.getenv("GITLAB_TOKEN", "")
+    api_url = os.getenv("GITLAB_API_URL", "")
+    default_group = os.getenv("GITLAB_DEFAULT_GROUP", "")
+    default_assignee = os.getenv("GITLAB_DEFAULT_ASSIGNEE", "")
+    
+    if not token or not api_url:
+        log_error("GITLAB_TOKEN e GITLAB_API_URL são obrigatórios")
+        raise ValueError("Credenciais incompletas")
+    
+    return token, api_url, default_group, default_assignee
 
 # ============================================================================
 # Template de Issues
@@ -159,15 +152,16 @@ def get_issue_template() -> str:
 # Funções de Integração com GitLab API
 # ============================================================================
 
-def _make_gitlab_request(url: str, method: str = "GET", **kwargs) -> requests.Response:
+def _make_gitlab_request(url: str, token: str, method: str = "GET", **kwargs) -> requests.Response:
     """Faz requisição para API do GitLab com tratamento de erro"""
+    headers = {"PRIVATE-TOKEN": token}
     try:
         log_info(f"Requisição {method}: {url}")
         
         if method == "GET":
-            response = requests.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT_SECONDS, **kwargs)
+            response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS, **kwargs)
         elif method == "POST":
-            response = requests.post(url, headers=HEADERS, timeout=REQUEST_TIMEOUT_SECONDS, **kwargs)
+            response = requests.post(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS, **kwargs)
         else:
             raise ValueError(f"Método HTTP não suportado: {method}")
         
@@ -181,12 +175,12 @@ def _make_gitlab_request(url: str, method: str = "GET", **kwargs) -> requests.Re
         log_error(f"Erro na requisição GitLab: {url} - {e}")
         raise
 
-def get_user_id(username: str) -> int:
+def get_user_id(username: str, token: str, api_url: str) -> int:
     """Busca ID do usuário no GitLab pelo username"""
     log_info(f"Buscando ID do usuário: {username}")
     
-    url = f"{GITLAB_API_URL}/users"
-    response = _make_gitlab_request(url, params={"username": username})
+    url = f"{api_url}/users"
+    response = _make_gitlab_request(url, token, params={"username": username})
     users = response.json()
     
     if not users:
@@ -207,19 +201,19 @@ def _sort_projects_by_path(projects: list[dict]) -> list[dict]:
     """Ordena projetos pelo path"""
     return sorted(projects, key=lambda p: p.get('path_with_namespace', ''))
 
-def get_projects_from_group(group_path: str) -> list[dict]:
+def get_projects_from_group(group_path: str, token: str, api_url: str) -> list[dict]:
     """Lista todos os projetos do grupo incluindo subgrupos recursivamente"""
     log_info(f"Buscando projetos do grupo: {group_path}")
     
     encoded_group = _encode_group_path(group_path)
-    url = f"{GITLAB_API_URL}/groups/{encoded_group}/projects"
+    url = f"{api_url}/groups/{encoded_group}/projects"
     
     params = {
         "per_page": MAX_PROJECTS_PER_PAGE,
         "include_subgroups": "true"
     }
     
-    response = _make_gitlab_request(url, params=params)
+    response = _make_gitlab_request(url, token, params=params)
     
     # Tenta fazer parse do JSON com tratamento de erro
     try:
@@ -259,11 +253,11 @@ def _format_project_list(projects: list[dict], limit: int) -> str:
     """Formata lista de projetos para exibição"""
     return ', '.join([project['name'] for project in projects[:limit]])
 
-def find_project_by_name(project_name: str, group_path: str) -> dict:
+def find_project_by_name(project_name: str, group_path: str, token: str, api_url: str) -> dict:
     """Busca projeto por nome no grupo especificado"""
     log_info(f"Buscando projeto: {project_name}")
     
-    projects = get_projects_from_group(group_path)
+    projects = get_projects_from_group(group_path, token, api_url)
     
     # Tenta busca exata primeiro
     exact_match = _find_exact_project_match(project_name, projects)
@@ -299,14 +293,14 @@ def _build_issue_data(title: str, description: str, assignee_id: int, labels: li
         "labels": labels
     }
 
-def create_issue(project_id: int, title: str, description: str, assignee_id: int, labels: list[str]) -> dict:
+def create_issue(project_id: int, title: str, description: str, assignee_id: int, labels: list[str], token: str, api_url: str) -> dict:
     """Cria issue no GitLab"""
     log_info(f"Criando issue no projeto ID {project_id}: {title}")
     
-    url = f"{GITLAB_API_URL}/projects/{project_id}/issues"
+    url = f"{api_url}/projects/{project_id}/issues"
     data = _build_issue_data(title, description, assignee_id, labels)
     
-    response = _make_gitlab_request(url, method="POST", json=data)
+    response = _make_gitlab_request(url, token, method="POST", json=data)
     issue = response.json()
     
     log_info(f"Issue criada com sucesso: #{issue['iid']} - {issue['web_url']}")
@@ -350,7 +344,7 @@ def _create_create_issue_tool() -> dict:
                 },
                 "assignee": {
                     "type": "string",
-                    "description": f"Username do responsável (opcional, padrão: {DEFAULT_ASSIGNEE})"
+                    "description": "Username do responsável (opcional, usa assignee padrão configurado se omitido)"
                 },
                 "labels": {
                     "type": "array",
@@ -447,9 +441,9 @@ def _format_project_info(index: int, project: dict) -> str:
     
     return result + "\n"
 
-def _format_projects_list(projects: list[dict]) -> str:
+def _format_projects_list(projects: list[dict], group_name: str) -> str:
     """Formata lista completa de projetos"""
-    result = f"📁 **Projetos disponíveis em '{DEFAULT_GROUP}' (recursivo):**\n\n"
+    result = f"📁 **Projetos disponíveis em '{group_name}' (recursivo):**\n\n"
     
     for index, project in enumerate(projects, 1):
         result += _format_project_info(index, project)
@@ -461,18 +455,24 @@ def handle_list_projects() -> dict:
     """Handler para listar projetos do GitLab"""
     log_info("Listando projetos do GitLab")
     
-    projects = get_projects_from_group(DEFAULT_GROUP)
-    formatted_list = _format_projects_list(projects)
+    # Busca credenciais do Keychain
+    token, api_url, default_group, _ = get_gitlab_credentials()
+    
+    if not token or not default_group:
+        return _create_error_response("Credenciais não configuradas. Execute 'GitLab MCP: Configure Server' primeiro.")
+    
+    projects = get_projects_from_group(default_group, token, api_url)
+    formatted_list = _format_projects_list(projects, default_group)
     
     log_info(f"Lista de projetos gerada com sucesso ({len(projects)} projetos)")
     return _create_success_response(formatted_list)
 
-def _extract_issue_arguments(arguments: dict) -> tuple[str, str, str, str, list[str]]:
+def _extract_issue_arguments(arguments: dict, default_assignee: str) -> tuple[str, str, str, str, list[str]]:
     """Extrai e valida argumentos para criação de issue"""
     project_name = arguments["project_name"]
     title = arguments["title"]
     description = arguments["description"]
-    assignee = arguments.get("assignee", DEFAULT_ASSIGNEE)
+    assignee = arguments.get("assignee", default_assignee)
     labels = arguments.get("labels", ["Grupo Panvel :: Analyze", "User Story"])
     
     return project_name, title, description, assignee, labels
@@ -493,18 +493,24 @@ def handle_create_issue(arguments: dict) -> dict:
     """Handler para criar issue no GitLab"""
     log_info("Iniciando criação de issue")
     
+    # Busca credenciais do Keychain
+    token, api_url, default_group, default_assignee = get_gitlab_credentials()
+    
+    if not token or not default_group:
+        return _create_error_response("Credenciais não configuradas. Execute 'GitLab MCP: Configure Server' primeiro.")
+    
     # Extrai argumentos
-    project_name, title, description, assignee, labels = _extract_issue_arguments(arguments)
+    project_name, title, description, assignee, labels = _extract_issue_arguments(arguments, default_assignee)
     
     # Busca projeto
-    project = find_project_by_name(project_name, DEFAULT_GROUP)
+    project = find_project_by_name(project_name, default_group, token, api_url)
     log_info(f"Projeto encontrado: {project['name']} (ID: {project['id']})")
     
     # Busca usuário
-    assignee_id = get_user_id(assignee)
+    assignee_id = get_user_id(assignee, token, api_url)
     
     # Cria issue
-    issue = create_issue(project['id'], title, description, assignee_id, labels)
+    issue = create_issue(project['id'], title, description, assignee_id, labels, token, api_url)
     
     # Formata resultado
     result = _format_issue_result(issue, project, assignee, labels)
@@ -625,23 +631,24 @@ def process_message(message: dict) -> dict | None:
 # ============================================================================
 
 def _validate_environment():
-    """Valida variáveis de ambiente necessárias"""
-    if not GITLAB_TOKEN:
+    """Valida se credenciais existem"""
+    token, api_url, default_group, default_assignee = get_gitlab_credentials()
+    
+    if not token:
         log_info("="*60)
         log_info("⚠️  GitLab MCP Server - Configuração necessária")
         log_info("="*60)
         log_info("")
-        log_info("Execute o comando 'GitLab MCP: Configure GitLab' na Command Palette")
-        log_info("Isso criará o arquivo ~/.gitlab-mcp-config.json com suas credenciais.")
+        log_info("Execute o comando 'GitLab MCP: Configure Server' na Command Palette")
+        log_info("Suas credenciais serão armazenadas de forma segura.")
         log_info("")
         log_info("="*60)
         sys.exit(1)
     else:
-        config_source = f"~/.gitlab-mcp-config.json" if CONFIG_FILE.exists() else "variáveis de ambiente"
-        log_info(f"✅ Credenciais carregadas de: {config_source}")
-        log_info(f"📡 API URL: {GITLAB_API_URL}")
-        log_info(f"📁 Grupo padrão: {DEFAULT_GROUP or '(não configurado)'}")
-        log_info(f"👤 Assignee padrão: {DEFAULT_ASSIGNEE or '(não configurado)'}")
+        log_info(f"✅ Credenciais carregadas")
+        log_info(f"📡 API URL: {api_url}")
+        log_info(f"📁 Grupo padrão: {default_group or '(não configurado)'}")
+        log_info(f"👤 Assignee padrão: {default_assignee or '(não configurado)'}")
 
 def _process_stdin_line(line: str):
     """Processa uma linha do stdin"""

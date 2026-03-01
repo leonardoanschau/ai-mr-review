@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { ConfigurationManager } from './configuration';
+import { GitLabMCPConfigManager } from './config-manager';
 
 export class MCPManager {
     private outputChannel: vscode.OutputChannel;
@@ -10,7 +10,7 @@ export class MCPManager {
 
     constructor(
         private context: vscode.ExtensionContext,
-        private configManager: ConfigurationManager
+        private configManager: GitLabMCPConfigManager
     ) {
         this.outputChannel = vscode.window.createOutputChannel('GitLab MCP Server');
         context.subscriptions.push(this.outputChannel);
@@ -27,9 +27,10 @@ export class MCPManager {
         }
 
         try {
-            const config = await this.configManager.getConfiguration();
-            if (!config) {
-                throw new Error('Configuration not found. Run "GitLab MCP: Configure GitLab"');
+            // Verifica se está configurado
+            const isConfigured = await this.configManager.isConfigured();
+            if (!isConfigured) {
+                throw new Error('Configuration not found. Run "GitLab MCP: Configure Server"');
             }
 
             // Get binary path
@@ -43,8 +44,8 @@ export class MCPManager {
 
             this.outputChannel.appendLine(`🚀 Registering GitLab MCP Server in mcp.json...`);
 
-            // Registra no mcp.json (com env vars)
-            await this.registerMCPServer(binaryPath, config);
+            // Registra no mcp.json (com env vars do SecretStorage)
+            await this.registerMCPServer(binaryPath);
             
             this.isRegistered = true;
             this.outputChannel.appendLine(`✅ Servidor registrado! O VS Code gerenciará o processo.`);
@@ -84,7 +85,7 @@ export class MCPManager {
     /**
      * Registra o servidor MCP no mcp.json para integração com Copilot
      */
-    private async registerMCPServer(binaryPath: string, config: any): Promise<void> {
+    private async registerMCPServer(binaryPath: string): Promise<void> {
         try {
             const mcpConfigPath = this.getMCPConfigPath();
             
@@ -100,11 +101,14 @@ export class MCPManager {
                 }
             }
 
-            // Adiciona/atualiza entrada do GitLab MCP (SEM env vars - servidor lê de ~/.gitlab-mcp-config.json)
+            // Adiciona/atualiza entrada do GitLab MCP
+            const env = await this.configManager.getEnvironmentVariables();
+            
             mcpConfig.servers = mcpConfig.servers || {};
             mcpConfig.servers['gitlab-mcp-anschauti-tools-server'] = {
                 command: binaryPath,
                 args: [],
+                env: env,
                 type: 'stdio'
             };
 
@@ -116,8 +120,7 @@ export class MCPManager {
             
             fs.writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, '\t'));
             this.outputChannel.appendLine(`✅ Servidor registrado no mcp.json: ${mcpConfigPath}`);
-            this.outputChannel.appendLine(`🔐 Credenciais salvas em ~/.gitlab-mcp-config.json (não no mcp.json!)`);
-            this.outputChannel.appendLine(`�📝 O VS Code gerenciará o lifecycle do servidor`);
+            this.outputChannel.appendLine(` O VS Code gerenciará o lifecycle do servidor`);
             
         } catch (error) {
             this.outputChannel.appendLine(`⚠️ Erro ao registrar no mcp.json: ${error}`);
@@ -140,8 +143,8 @@ export class MCPManager {
             const mcpConfig = JSON.parse(content);
 
             // Remove servidor
-            if (mcpConfig.servers && mcpConfig.servers['gitlab-mcp-server']) {
-                delete mcpConfig.servers['gitlab-mcp-server'];
+            if (mcpConfig.servers && mcpConfig.servers['gitlab-mcp-anschauti-tools-server']) {
+                delete mcpConfig.servers['gitlab-mcp-anschauti-tools-server'];
                 this.outputChannel.appendLine(`✅ Servidor removido do mcp.json`);
             }
             
@@ -173,7 +176,7 @@ export class MCPManager {
     }
 
     /**
-     * Obtém caminho do script Python do servidor MCP
+     * Obtém caminho do binário do servidor MCP
      */
     private getServerBinaryPath(): string {
         const configuredPath = vscode.workspace.getConfiguration('gitlabmcp').get<string>('mcp.serverPath');
@@ -204,5 +207,13 @@ export class MCPManager {
      */
     isRunning(): boolean {
         return this.isRegistered;
+    }
+
+    /**
+     * Reinicia o servidor (útil após mudanças de configuração)
+     */
+    async restart(): Promise<void> {
+        await this.stop();
+        await this.start();
     }
 }

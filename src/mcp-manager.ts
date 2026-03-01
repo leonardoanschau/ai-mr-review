@@ -102,7 +102,7 @@ export class MCPManager {
 
             // Adiciona/atualiza entrada do GitLab MCP (SEM env vars - servidor lê de ~/.gitlab-mcp-config.json)
             mcpConfig.servers = mcpConfig.servers || {};
-            mcpConfig.servers['gitlab-mcp-server'] = {
+            mcpConfig.servers['gitlab-mcp-anschauti-tools-server'] = {
                 command: binaryPath,
                 args: [],
                 type: 'stdio'
@@ -187,15 +187,15 @@ export class MCPManager {
         let binaryName: string;
         
         if (platform === 'darwin') {
-            binaryName = 'gitlab-mcp-server';
+            binaryName = 'gitlab-mcp-anschauti-tools-server';
         } else if (platform === 'win32') {
-            binaryName = 'gitlab-mcp-server.exe';
+            binaryName = 'gitlab-mcp-anschauti-tools-server.exe';
         } else {
             // Linux
-            binaryName = 'gitlab-mcp-server';
+            binaryName = 'gitlab-mcp-anschauti-tools-server';
         }
 
-        // Default path: extension/bin/gitlab-mcp-server
+        // Default path: extension/bin/gitlab-mcp-anschauti-tools-server
         return path.join(this.context.extensionPath, 'bin', binaryName);
     }
 

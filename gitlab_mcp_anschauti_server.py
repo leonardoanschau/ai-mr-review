@@ -679,7 +679,7 @@ def _handle_unexpected_error(error: Exception):
 def main():
     """Main loop do MCP server - lê stdin e processa mensagens JSON-RPC"""
     log_info("=" * 60)
-    log_info("Varejo CRM MCP Server iniciado")
+    log_info("GitLab AnschauTI Tools Server iniciado")
     log_info(f"Protocolo MCP: {MCP_PROTOCOL_VERSION}")
     log_info("=" * 60)
     

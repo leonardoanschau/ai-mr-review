@@ -12,13 +12,13 @@ NC='\033[0m' # No Color
 OS="unknown"
 if [[ "$OSTYPE" == "darwin"* ]]; then
     OS="macos"
-    BINARY_NAME="gitlab-mcp-server"
+    BINARY_NAME="gitlab-mcp-anschauti-tools-server"
 elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
     OS="linux"
-    BINARY_NAME="gitlab-mcp-server"
+    BINARY_NAME="gitlab-mcp-anschauti-tools-server"
 elif [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
     OS="windows"
-    BINARY_NAME="gitlab-mcp-server.exe"
+    BINARY_NAME="gitlab-mcp-anschauti-tools-server.exe"
 fi
 
 echo -e "${BLUE}📦 Detected OS: $OS${NC}"
@@ -44,7 +44,7 @@ pip install pyinstaller requests
 echo -e "${BLUE}🔨 Compiling Python to executable...${NC}"
 pyinstaller \
     --onefile \
-    --name gitlab-mcp-server \
+    --name gitlab-mcp-anschauti-tools-server \
     --clean \
     --noconfirm \
     --hidden-import=requests \
@@ -52,7 +52,7 @@ pyinstaller \
     --hidden-import=certifi \
     --hidden-import=charset_normalizer \
     --hidden-import=idna \
-    crm_mcp_server.py
+    gitlab_mcp_anschauti_server.py
 
 # Move binary to bin directory
 echo -e "${BLUE}📦 Moving binary to bin/...${NC}"

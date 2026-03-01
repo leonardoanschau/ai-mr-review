@@ -163,7 +163,7 @@ export class ConfigurationManager {
 
         const mcpConfig = {
             mcpServers: {
-                "gitlab-mcp": {
+                "gitlab-mcp-anschauti-tools": {
                     command: vscode.workspace.getConfiguration('gitlabmcp').get('mcp.pythonPath') || 'python3',
                     args: [this.getServerScriptPath()],
                     env: {

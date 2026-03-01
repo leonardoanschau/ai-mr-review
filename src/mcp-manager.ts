@@ -33,19 +33,19 @@ export class MCPManager {
                 throw new Error('Configuration not found. Run "GitLab MCP: Configure Server"');
             }
 
-            // Get binary path
-            const binaryPath = this.getServerBinaryPath();
-            this.outputChannel.appendLine(`📂 Server binary: ${binaryPath}`);
+            // Get server script path
+            const serverScriptPath = this.getServerScriptPath();
+            this.outputChannel.appendLine(`📂 Server script: ${serverScriptPath}`);
 
-            // Check if binary exists
-            if (!fs.existsSync(binaryPath)) {
-                throw new Error(`Server binary not found at: ${binaryPath}`);
+            // Check if server script exists
+            if (!fs.existsSync(serverScriptPath)) {
+                throw new Error(`Server script not found at: ${serverScriptPath}`);
             }
 
             this.outputChannel.appendLine(`🚀 Registering GitLab MCP Server in mcp.json...`);
 
             // Registra no mcp.json (com env vars do SecretStorage)
-            await this.registerMCPServer(binaryPath);
+            await this.registerMCPServer(serverScriptPath);
             
             this.isRegistered = true;
             this.outputChannel.appendLine(`✅ Servidor registrado! O VS Code gerenciará o processo.`);
@@ -85,7 +85,7 @@ export class MCPManager {
     /**
      * Registra o servidor MCP no mcp.json para integração com Copilot
      */
-    private async registerMCPServer(binaryPath: string): Promise<void> {
+    private async registerMCPServer(serverScriptPath: string): Promise<void> {
         try {
             const mcpConfigPath = this.getMCPConfigPath();
             
@@ -106,8 +106,8 @@ export class MCPManager {
             
             mcpConfig.servers = mcpConfig.servers || {};
             mcpConfig.servers['gitlab-mcp-anschauti-tools-server'] = {
-                command: binaryPath,
-                args: [],
+                command: 'node',  // Use Node.js from VS Code
+                args: [serverScriptPath],
                 env: env,
                 type: 'stdio'
             };
@@ -176,30 +176,17 @@ export class MCPManager {
     }
 
     /**
-     * Obtém caminho do binário do servidor MCP
+     * Obtém caminho do script do servidor MCP (Node.js)
      */
-    private getServerBinaryPath(): string {
+    private getServerScriptPath(): string {
         const configuredPath = vscode.workspace.getConfiguration('gitlabmcp').get<string>('mcp.serverPath');
         
         if (configuredPath) {
             return configuredPath;
         }
 
-        // Detect OS and return appropriate binary
-        const platform = process.platform;
-        let binaryName: string;
-        
-        if (platform === 'darwin') {
-            binaryName = 'gitlab-mcp-anschauti-tools-server';
-        } else if (platform === 'win32') {
-            binaryName = 'gitlab-mcp-anschauti-tools-server.exe';
-        } else {
-            // Linux
-            binaryName = 'gitlab-mcp-anschauti-tools-server';
-        }
-
-        // Default path: extension/bin/gitlab-mcp-anschauti-tools-server
-        return path.join(this.context.extensionPath, 'bin', binaryName);
+        // Default path: extension/server/dist/server.js
+        return path.join(this.context.extensionPath, 'server', 'dist', 'server.js');
     }
 
     /**

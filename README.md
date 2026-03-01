@@ -4,6 +4,23 @@
 
 GitLab productivity tools integrated with GitHub Copilot. Create issues, list projects, and use templates - all with natural language!
 
+## 🖥️ Cross-Platform Support
+
+✅ **macOS** (Intel & Apple Silicon)  
+✅ **Windows** (x64 & ARM64)  
+✅ **Linux** (x64 & ARM64)
+
+*Works out-of-the-box on all platforms - no Python, no binaries, just JavaScript!*
+
+## ⚡ Architecture
+
+Built with **TypeScript** for maximum compatibility:
+- 🌍 **Universal**: One codebase runs everywhere
+- 🚀 **Fast startup**: No binary loading overhead  
+- 🔧 **Easy debugging**: Native VS Code support
+- 📦 **Small footprint**: ~50KB vs ~30MB per binary
+- 🔐 **Secure**: Uses VS Code's built-in Node.js
+
 ## ✨ Features
 
 - 🎯 **GitLab Issue Creation** - Use natural language with Copilot

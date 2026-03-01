@@ -16,15 +16,31 @@ __pycache__/**
 *.pyc
 .venv/**
 .env
-# Python source files (not needed, we use compiled binaries)
+
+# Python files (replaced by TypeScript server)
 *.py
 main.py
 gitlab_mcp_server.py
+gitlab_mcp_anschauti_server.py
 crm_mcp_server.py
-# Include binaries
-!bin/**
+requirements.txt
+scripts/**
+
+# Server source files (only include compiled dist)
+server/src/**
+server/node_modules/**
+server/package-lock.json
+server/tsconfig.json
+
+# Include compiled server
+!server/dist/**
+!server/package.json
+
 # Build artifacts
 build/**
 dist/**
 *.spec
 pyproject.toml
+
+# Binaries (no longer needed)
+bin/**

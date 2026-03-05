@@ -33,39 +33,39 @@
       {
         "command": "gitlabmcp.configure",
         "title": "Configure Server (Secure)",
-        "category": "GitLab MCP",
+        "category": "GitLab MCP AnschauTI",
         "icon": "$(gear)"
       },
       {
         "command": "gitlabmcp.showConfiguration",
         "title": "Show Configuration",
-        "category": "GitLab MCP",
+        "category": "GitLab MCP AnschauTI",
         "icon": "$(info)"
       },
       {
         "command": "gitlabmcp.clearConfiguration",
         "title": "Clear Configuration",
-        "category": "GitLab MCP",
+        "category": "GitLab MCP AnschauTI",
         "icon": "$(trash)"
       },
       {
         "command": "gitlabmcp.createIssue",
         "title": "Create GitLab Issue",
-        "category": "GitLab MCP"
+        "category": "GitLab MCP AnschauTI"
       },
       {
         "command": "gitlabmcp.listProjects",
         "title": "List GitLab Projects",
-        "category": "GitLab MCP"
+        "category": "GitLab MCP AnschauTI"
       },
       {
         "command": "gitlabmcp.showTemplate",
         "title": "Show Issue Template",
-        "category": "GitLab MCP"
+        "category": "GitLab MCP AnschauTI"
       }
     ],
     "configuration": {
-      "title": "GitLab MCP",
+      "title": "GitLab MCP AnschauTI",
       "properties": {
         "gitlabmcp.gitlab.url": {
           "type": "string",

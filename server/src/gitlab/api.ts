@@ -41,6 +41,50 @@ export interface GitLabIssue {
   state: string;
 }
 
+export interface GitLabMergeRequest {
+  id: number;
+  iid: number;
+  title: string;
+  description: string;
+  web_url: string;
+  state: string;
+  source_branch: string;
+  target_branch: string;
+  author: GitLabUser;
+}
+
+export interface GitLabMergeRequestChange {
+  old_path: string;
+  new_path: string;
+  diff: string;
+  new_file: boolean;
+  renamed_file: boolean;
+  deleted_file: boolean;
+}
+
+export interface GitLabMergeRequestChanges extends GitLabMergeRequest {
+  changes: GitLabMergeRequestChange[];
+  diff_refs?: {
+    base_sha: string;
+    start_sha: string;
+    head_sha: string;
+  };
+}
+
+export interface CreateMergeRequestNoteParams {
+  body: string;
+  position?: {
+    base_sha: string;
+    start_sha: string;
+    head_sha: string;
+    position_type: 'text';
+    old_path?: string;
+    new_path: string;
+    old_line?: number;
+    new_line: number;
+  };
+}
+
 interface CreateIssueParams {
   title: string;
   description: string;
@@ -134,6 +178,18 @@ export class GitLabApiClient {
     return user;
   }
 
+  async getProjectByPath(projectPath: string): Promise<GitLabProject> {
+    logger.info(`Fetching project by path: ${projectPath}`);
+    
+    // URL encode o path do projeto
+    const encodedPath = encodeURIComponent(projectPath);
+    
+    const project = await this.makeRequest<GitLabProject>(`/projects/${encodedPath}`);
+    
+    logger.info(`Found project: ${project.name} (ID: ${project.id})`);
+    return project;
+  }
+
   async getGroupProjects(groupPath: string): Promise<GitLabProject[]> {
     logger.info(`Fetching projects from group: ${groupPath}`);
     
@@ -177,5 +233,51 @@ export class GitLabApiClient {
 
     logger.info(`Issue created: #${issue.iid} - ${issue.web_url}`);
     return issue;
+  }
+
+  async getMergeRequest(
+    projectId: number,
+    mrIid: number
+  ): Promise<GitLabMergeRequest> {
+    logger.info(`Fetching MR !${mrIid} from project ${projectId}`);
+    
+    const mr = await this.makeRequest<GitLabMergeRequest>(
+      `/projects/${projectId}/merge_requests/${mrIid}`
+    );
+
+    logger.info(`Found MR: !${mr.iid} - ${mr.title}`);
+    return mr;
+  }
+
+  async getMergeRequestChanges(
+    projectId: number,
+    mrIid: number
+  ): Promise<GitLabMergeRequestChanges> {
+    logger.info(`Fetching changes for MR !${mrIid} from project ${projectId}`);
+    
+    const changes = await this.makeRequest<GitLabMergeRequestChanges>(
+      `/projects/${projectId}/merge_requests/${mrIid}/changes`
+    );
+
+    logger.info(`Found ${changes.changes.length} changed files in MR !${mrIid}`);
+    return changes;
+  }
+
+  async createMergeRequestNote(
+    projectId: number,
+    mrIid: number,
+    params: CreateMergeRequestNoteParams
+  ): Promise<void> {
+    logger.info(`Creating note on MR !${mrIid} in project ${projectId}`);
+    
+    await this.makeRequest(
+      `/projects/${projectId}/merge_requests/${mrIid}/discussions`,
+      {
+        method: 'POST',
+        body: params,
+      }
+    );
+
+    logger.info(`Note created on MR !${mrIid}`);
   }
 }

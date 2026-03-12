@@ -72,7 +72,103 @@ export class McpToolsDefinition {
     };
   }
 
+  static reviewMergeRequestTool(): McpTool {
+    return {
+      name: 'review_gitlab_merge_request',
+      description:
+        'Analisa um Merge Request do GitLab retornando APENAS as linhas ADICIONADAS (com +) e checklist de code review. A IA deve focar SOMENTE no código NOVO, ignorando código removido ou de contexto. Esta tool NÃO posta comentários - apenas retorna a análise. Use post_merge_request_comments para postar os comentários.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          mr_url: {
+            type: 'string',
+            description:
+              'URL completa do Merge Request (ex: http://gitlab.com/grupo/projeto/-/merge_requests/123)',
+          },
+          project_id: {
+            type: 'number',
+            description:
+              'ID do projeto GitLab (use se não fornecer mr_url)',
+          },
+          mr_iid: {
+            type: 'number',
+            description:
+              'IID (número) do Merge Request no projeto (use se não fornecer mr_url)',
+          },
+          review_focus: {
+            type: 'string',
+            description:
+              'Foco da revisão: "security" (segurança), "performance" (performance), "best_practices" (boas práticas), "bugs" (bugs potenciais), ou "all" (tudo). Padrão: "all"',
+            enum: ['security', 'performance', 'best_practices', 'bugs', 'all'],
+          },
+        },
+        required: [],
+      },
+    };
+  }
+
+  static postMergeRequestCommentsTool(): McpTool {
+    return {
+      name: 'post_merge_request_comments',
+      description:
+        'Posta comentários de code review em linhas específicas de um Merge Request do GitLab. Use após analisar o MR com review_gitlab_merge_request. Cada comentário será postado na linha exata do arquivo especificado.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          mr_url: {
+            type: 'string',
+            description:
+              'URL completa do Merge Request (ex: http://gitlab.com/grupo/projeto/-/merge_requests/123)',
+          },
+          project_id: {
+            type: 'number',
+            description:
+              'ID do projeto GitLab (use se não fornecer mr_url)',
+          },
+          mr_iid: {
+            type: 'number',
+            description:
+              'IID (número) do Merge Request no projeto (use se não fornecer mr_url)',
+          },
+          comments: {
+            type: 'array',
+            description:
+              'Lista de comentários a serem postados. Cada comentário deve conter: file_path, new_line, e body (texto do comentário)',
+            items: {
+              type: 'object',
+              properties: {
+                file_path: {
+                  type: 'string',
+                  description:
+                    'Caminho completo do arquivo (ex: src/main/java/com/example/Service.java)',
+                },
+                new_line: {
+                  type: 'number',
+                  description:
+                    'Número da linha no arquivo NOVO/modificado onde o comentário será postado',
+                },
+                body: {
+                  type: 'string',
+                  description:
+                    'Texto do comentário em Markdown. Use formato:\n\n**⚠️ Problema**: Descrição do problema encontrado\n\n**✅ Solução**: Sugestão de como corrigir\n\n**Severidade**: CRITICAL/HIGH/MEDIUM/LOW',
+                },
+              },
+              required: ['file_path', 'new_line', 'body'],
+            },
+          },
+        },
+        required: ['comments'],
+      },
+    };
+  }
+
   static getAllTools(): McpTool[] {
-    return [this.listProjectsTool(), this.createIssueTool(), this.getTemplateTool()];
+    return [
+      this.listProjectsTool(),
+      this.createIssueTool(),
+      this.getTemplateTool(),
+      this.reviewMergeRequestTool(),
+      this.postMergeRequestCommentsTool(),
+    ];
   }
 }

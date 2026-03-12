@@ -8,7 +8,7 @@ export interface ReviewRule {
   title: string;
   description: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
-  category: 'architecture' | 'testing' | 'quality' | 'security' | 'performance';
+  category: 'business' | 'architecture' | 'testing' | 'quality' | 'security' | 'performance';
   enabled: boolean;
 }
 
@@ -26,6 +26,56 @@ export class CodeReviewChecklist {
    */
   static getRules(): ReviewRule[] {
     return [
+      // ========================================
+      // 💼 REGRAS DE NEGÓCIO
+      // ========================================
+      {
+        id: 'business-requirements',
+        title: 'Validação de requisitos de negócio',
+        description: `
+Verificar se o código implementa corretamente os requisitos descritos na Tarefa/User Story.
+
+**O que verificar:**
+- ✅ Código resolve o problema descrito na tarefa?
+- ✅ Implementa TODOS os critérios de aceite da User Story?
+- ✅ Lógica de negócio está coerente com o objetivo?
+- ✅ Nomenclatura reflete o domínio de negócio?
+- ✅ Não há funcionalidades além do escopo (gold plating)?
+
+**Exemplo:**
+
+📋 **Tarefa:** "Criar validação de CPF antes de cadastrar cliente"
+
+❌ **PROBLEMA - não implementa requisito:**
+\`\`\`java
+public void createCustomer(Customer customer) {
+    // ❌ Não valida CPF conforme requisito
+    customerRepository.save(customer);
+}
+\`\`\`
+
+✅ **CORRETO - implementa requisito:**
+\`\`\`java
+public void createCustomer(Customer customer) {
+    // ✅ Valida CPF conforme requisito
+    if (!cpfValidator.isValid(customer.getCpf())) {
+        throw new InvalidCpfException("CPF inválido");
+    }
+    customerRepository.save(customer);
+}
+\`\`\`
+
+💡 **AÇÃO:** 
+- Compare o código com a descrição da tarefa/US
+- Identifique requisitos NÃO implementados
+- Identifique código que vai ALÉM do escopo (se houver)
+- Verifique se a solução resolve o problema original
+`,
+        severity: 'critical',
+        category: 'business',
+        enabled: true,
+      },
+
       // ========================================
       // 🏗️ ARQUITETURA E DESIGN
       // ========================================
@@ -419,6 +469,7 @@ Verificar se há comentários TODO que devem ser resolvidos antes do merge.
     prompt += `Analise o código seguindo estas regras (${filteredRules.length} regras ativas):\n\n`;
 
     const categoriesMap = {
+      business: '💼 REGRAS DE NEGÓCIO',
       architecture: '🏗️ ARQUITETURA',
       testing: '🧪 TESTES',
       quality: '🛡️ QUALIDADE',

@@ -39,6 +39,12 @@ export interface GitLabIssue {
   description: string;
   web_url: string;
   state: string;
+  labels?: string[];
+  references?: {
+    short: string;
+    relative: string;
+    full: string;
+  };
 }
 
 export interface GitLabMergeRequest {
@@ -83,6 +89,19 @@ export interface CreateMergeRequestNoteParams {
     old_line?: number;
     new_line: number;
   };
+}
+
+export interface GitLabRepositoryFile {
+  file_name: string;
+  file_path: string;
+  size: number;
+  encoding: string;
+  content: string;
+  content_sha256: string;
+  ref: string;
+  blob_id: string;
+  commit_id: string;
+  last_commit_id: string;
 }
 
 interface CreateIssueParams {
@@ -279,5 +298,83 @@ export class GitLabApiClient {
     );
 
     logger.info(`Note created on MR !${mrIid}`);
+  }
+
+  /**
+   * Busca issues que serão fechadas pelo MR
+   * GitLab detecta automaticamente issues referenciadas com "Closes #123" ou "Fixes #123"
+   */
+  async getMergeRequestClosesIssues(
+    projectId: number,
+    mrIid: number
+  ): Promise<GitLabIssue[]> {
+    logger.info(`Fetching issues closed by MR !${mrIid} in project ${projectId}`);
+    
+    try {
+      const issues = await this.makeRequest<GitLabIssue[]>(
+        `/projects/${projectId}/merge_requests/${mrIid}/closes_issues`
+      );
+
+      logger.info(`Found ${issues.length} issues to be closed by MR !${mrIid}`);
+      return issues;
+    } catch (error) {
+      logger.error(`Failed to fetch closes_issues for MR !${mrIid}`, { error });
+      return [];
+    }
+  }
+
+  /**
+   * Busca uma issue específica por IID
+   */
+  async getIssue(
+    projectId: number,
+    issueIid: number
+  ): Promise<GitLabIssue> {
+    logger.info(`Fetching issue #${issueIid} from project ${projectId}`);
+    
+    const issue = await this.makeRequest<GitLabIssue>(
+      `/projects/${projectId}/issues/${issueIid}`
+    );
+
+    logger.info(`Found issue: #${issue.iid} - ${issue.title}`);
+    return issue;
+  }
+
+  /**
+   * Busca conteúdo completo de um arquivo do repositório
+   * @param projectId ID do projeto
+   * @param filePath Caminho do arquivo no repositório
+   * @param ref Branch, tag ou commit SHA (default: branch principal)
+   */
+  async getRepositoryFile(
+    projectId: number,
+    filePath: string,
+    ref: string
+  ): Promise<GitLabRepositoryFile> {
+    logger.info(`Fetching file: ${filePath} from ref ${ref} in project ${projectId}`);
+    
+    // URL encode o caminho do arquivo
+    const encodedPath = encodeURIComponent(filePath);
+    
+    const file = await this.makeRequest<GitLabRepositoryFile>(
+      `/projects/${projectId}/repository/files/${encodedPath}`,
+      {
+        params: { ref },
+      }
+    );
+
+    logger.info(`Fetched file: ${file.file_name} (${file.size} bytes, encoding: ${file.encoding})`);
+    return file;
+  }
+
+  /**
+   * Decodifica o conteúdo do arquivo retornado pela API
+   * GitLab retorna content em base64 por padrão
+   */
+  decodeFileContent(file: GitLabRepositoryFile): string {
+    if (file.encoding === 'base64') {
+      return Buffer.from(file.content, 'base64').toString('utf-8');
+    }
+    return file.content;
   }
 }

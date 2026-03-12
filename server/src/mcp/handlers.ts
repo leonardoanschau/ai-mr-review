@@ -12,6 +12,7 @@ import { IssueTemplate } from '../templates/issue-template.js';
 import { CodeReviewChecklist } from '../templates/code-review-checklist.js';
 import { ConfigManager } from '../utils/config.js';
 import { logger } from '../utils/logger.js';
+import { BusinessContextExtractor } from '../utils/business-context.js';
 
 interface CreateIssueArgs {
   project_name: string;
@@ -43,11 +44,13 @@ export class McpToolHandlers {
   private projectService: ProjectService;
   private issueService: IssueService;
   private mrService: MergeRequestService;
+  private businessContext: BusinessContextExtractor;
 
   constructor(private api: GitLabApiClient) {
     this.projectService = new ProjectService(api);
     this.issueService = new IssueService(api);
     this.mrService = new MergeRequestService(api);
+    this.businessContext = new BusinessContextExtractor(api);
   }
 
   private createSuccessResult(text: string): McpToolResult {
@@ -188,15 +191,41 @@ export class McpToolHandlers {
       const mr = await this.mrService.getMergeRequest(projectId, mrIid);
       const changes = await this.mrService.getMergeRequestChanges(projectId, mrIid);
 
+      // 🎯 NOVO: Extrai contexto de negócio (issue + User Story)
+      logger.info(`Extracting business context for MR !${mrIid}`);
+      const businessContext = await this.businessContext.extractContext(projectId, mrIid);
+      const contextFormatted = this.businessContext.formatContext(businessContext);
+
       // Gera o checklist baseado no foco
       const focusCategory = CodeReviewChecklist.mapFocusToCategory(args.review_focus);
       const checklist = CodeReviewChecklist.generateChecklistPrompt(focusCategory || args.review_focus);
 
-      // Formata as mudanças para a IA analisar
-      const changesFormatted = this.mrService.formatChangesForReview(changes);
+      // Formata as mudanças para a IA analisar (agora busca arquivo completo)
+      const changesFormatted = await this.mrService.formatChangesForReview(projectId, changes);
 
-      // Retorna checklist + mudanças para a IA analisar
-      const result = `${checklist}\n\n${'='.repeat(80)}\n\n${changesFormatted}\n\n⚙️ **Próximo passo:**\nA IA está analisando o código seguindo o checklist acima.\n\n💡 **Foco da revisão:** ${args.review_focus || 'all'}\n👤 **Autor:** ${mr.author.name}\n🔗 **URL:** ${mr.web_url}`;
+      // Retorna: contexto de negócio + checklist + mudanças
+      let result = '';
+      
+      // Adiciona contexto de negócio no início se disponível
+      if (businessContext.hasContext) {
+        result += contextFormatted;
+      }
+      
+      result += `${checklist}\n\n${'='.repeat(80)}\n\n${changesFormatted}\n\n⚙️ **Próximo passo:**\nA IA está analisando o código seguindo o checklist acima.\n\n`;
+      
+      if (businessContext.hasContext) {
+        result += `📋 **Contexto de negócio:** Disponível (Tarefa #${businessContext.task?.id}`;
+        if (businessContext.userStory) {
+          result += ` + US #${businessContext.userStory.id}`;
+        }
+        result += ')\n';
+      } else {
+        result += `📋 **Contexto de negócio:** Não encontrado\n`;
+      }
+      
+      result += `💡 **Foco da revisão:** ${args.review_focus || 'all'}\n`;
+      result += `👤 **Autor:** ${mr.author.name}\n`;
+      result += `🔗 **URL:** ${mr.web_url}`;
 
       return this.createSuccessResult(result);
     } catch (error) {

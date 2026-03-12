@@ -183,18 +183,28 @@ export class MergeRequestService {
   }
 
   /**
-   * Formata as mudanças do MR para análise
+   * Formata as mudanças do MR para análise com CONTEXTO COMPLETO
+   * Busca arquivo inteiro da API para dar contexto total à análise
    */
-  formatChangesForReview(changes: GitLabMergeRequestChanges): string {
+  async formatChangesForReview(
+    projectId: number,
+    changes: GitLabMergeRequestChanges
+  ): Promise<string> {
     let output = `📝 **Merge Request !${changes.iid}: ${changes.title}**\n\n`;
     output += `🔗 URL: ${changes.web_url}\n`;
     output += `📊 Status: ${changes.state}\n`;
     output += `🌿 ${changes.source_branch} → ${changes.target_branch}\n`;
     output += `👤 Autor: ${changes.author.name} (@${changes.author.username})\n\n`;
     output += `📁 **Arquivos alterados: ${changes.changes.length}**\n\n`;
-    output += `⚠️ **IMPORTANTE**: Analise APENAS as linhas marcadas com \`+\` (código NOVO). Ignore linhas com \`-\` (removidas) e linhas de contexto.\n\n`;
+    output += `⚠️ **IMPORTANTE**: Você receberá o ARQUIVO COMPLETO com marcações de quais linhas foram adicionadas/modificadas.\n`;
+    output += `Analise o arquivo completo para entender o contexto, mas comente APENAS nas linhas marcadas com 💬.\n\n`;
 
-    changes.changes.forEach((change, index) => {
+    // Busca HEAD SHA para buscar arquivos
+    const headSha = changes.diff_refs?.head_sha || changes.source_branch;
+
+    for (let index = 0; index < changes.changes.length; index++) {
+      const change = changes.changes[index];
+      
       const status = change.new_file
         ? '🆕 Novo'
         : change.deleted_file
@@ -203,65 +213,120 @@ export class MergeRequestService {
             ? '📝 Renomeado'
             : '✏️ Modificado';
 
-      output += `${index + 1}. ${status}: \`${change.new_path}\`\n`;
+      output += `---\n\n## ${index + 1}. ${status}: \`${change.new_path}\`\n\n`;
       
-      // Extrai e mostra APENAS as linhas adicionadas (com +)
-      const addedLines = this.extractAddedLines(change.diff);
+      // Ignora arquivos deletados
+      if (change.deleted_file) {
+        output += '_(arquivo deletado)_\n\n';
+        continue;
+      }
+
+      // Extrai linhas comentáveis do diff
       const commentableLines = this.getCommentableLines(change.diff);
       
-      if (commentableLines.length > 0) {
-        const lineRanges = this.formatLineRanges(commentableLines);
-        output += `   💬 **Linhas comentáveis**: ${lineRanges}\n`;
+      if (commentableLines.length === 0) {
+        output += '_(arquivo sem mudanças comentáveis)_\n\n';
+        continue;
       }
+
+      // Detect language
+      const language = this.detectLanguage(change.new_path);
       
-      // Mostra APENAS as linhas adicionadas (+ no diff)
-      if (addedLines.length > 0) {
-        output += '\n**📝 Código NOVO (linhas com +):**\n';
-        output += '```diff\n';
-        addedLines.slice(0, 30).forEach(line => {
-          output += `${line}\n`;
+      // Summary das mudanças
+      output += `**📊 Resumo das mudanças:**\n`;
+      output += `- Linguagem: \`${language}\`\n`;
+      output += `- Linhas comentáveis: ${this.formatLineRanges(commentableLines)}\n`;
+      output += `- Total de linhas alteradas: ${commentableLines.length}\n\n`;
+
+      try {
+        // Busca arquivo completo da API
+        logger.info(`Fetching full file content for: ${change.new_path}`);
+        const file = await this.api.getRepositoryFile(projectId, change.new_path, headSha);
+        const fileContent = this.api.decodeFileContent(file);
+        const lines = fileContent.split('\n');
+
+        output += `### 📄 Arquivo completo (${lines.length} linhas)\n\n`;
+        output += `**⚠️ ATENÇÃO**: Analise o contexto completo abaixo, mas COMENTE APENAS as linhas marcadas com 💬\n\n`;
+        
+        // Apresenta arquivo completo com marcações
+        output += '```' + language + '\n';
+        
+        lines.forEach((line, idx) => {
+          const lineNum = idx + 1;
+          const isCommentable = commentableLines.includes(lineNum);
+          
+          // Formata: número da linha + código + marcador
+          const lineNumStr = String(lineNum).padStart(4, ' ');
+          const marker = isCommentable ? ' ← 💬 COMENTÁVEL' : '';
+          
+          output += `${lineNumStr} | ${line}${marker}\n`;
         });
-        if (addedLines.length > 30) {
-          output += `\n... (mais ${addedLines.length - 30} linhas adicionadas omitidas)`;
+        
+        output += '```\n\n';
+
+        // Seção destacada: apenas mudanças
+        if (commentableLines.length <= 50) {
+          output += `### 🎯 Mudanças destacadas (apenas linhas novas/modificadas)\n\n`;
+          output += '```' + language + '\n';
+          
+          commentableLines.forEach(lineNum => {
+            const line = lines[lineNum - 1] || '';
+            const lineNumStr = String(lineNum).padStart(4, ' ');
+            output += `${lineNumStr} | ${line}\n`;
+          });
+          
+          output += '```\n\n';
+        } else {
+          output += `_Muitas mudanças (${commentableLines.length} linhas). Veja arquivo completo acima com marcações 💬._\n\n`;
         }
-        output += '\n```\n';
+
+      } catch (error) {
+        // Fallback: se não conseguir buscar arquivo, mostra apenas o diff
+        logger.error(`Failed to fetch file ${change.new_path}`, { error });
+        output += `⚠️ **Não foi possível buscar arquivo completo. Mostrando apenas diff:**\n\n`;
+        output += `💬 **Linhas comentáveis**: ${this.formatLineRanges(commentableLines)}\n\n`;
+        
+        // Mostra diff tradicional
+        output += '```diff\n';
+        output += change.diff;
+        output += '\n```\n\n';
       }
-      
+
       output += '\n';
-    });
+    }
 
     return output;
   }
 
   /**
-   * Extrai apenas as linhas adicionadas do diff (linhas com +)
+   * Detecta linguagem pelo caminho do arquivo
    */
-  private extractAddedLines(diff: string): string[] {
-    const lines = diff.split('\n');
-    const addedLines: string[] = [];
-    let currentNewLine = 0;
-
-    for (const line of lines) {
-      // Pega o range inicial do diff
-      if (line.startsWith('@@')) {
-        const match = line.match(/\+(\d+)/);
-        if (match) {
-          currentNewLine = parseInt(match[1], 10) - 1;
-        }
-        addedLines.push(line); // Inclui o header do range
-        continue;
-      }
-
-      // Apenas linhas adicionadas (com +)
-      if (line.startsWith('+') && !line.startsWith('+++')) {
-        currentNewLine++;
-        addedLines.push(`L${currentNewLine}: ${line}`); // Adiciona número da linha
-      } else if (line.startsWith(' ')) {
-        currentNewLine++;
-      }
-    }
-
-    return addedLines;
+  private detectLanguage(filePath: string): string {
+    const ext = filePath.split('.').pop()?.toLowerCase() || '';
+    const langMap: Record<string, string> = {
+      'java': 'java',
+      'js': 'javascript',
+      'jsx': 'javascript',
+      'ts': 'typescript',
+      'tsx': 'typescript',
+      'py': 'python',
+      'rb': 'ruby',
+      'go': 'go',
+      'cs': 'csharp',
+      'cpp': 'cpp',
+      'c': 'c',
+      'php': 'php',
+      'kt': 'kotlin',
+      'swift': 'swift',
+      'yml': 'yaml',
+      'yaml': 'yaml',
+      'json': 'json',
+      'xml': 'xml',
+      'sql': 'sql',
+      'sh': 'bash',
+      'md': 'markdown',
+    };
+    return langMap[ext] || 'text';
   }
 
   /**

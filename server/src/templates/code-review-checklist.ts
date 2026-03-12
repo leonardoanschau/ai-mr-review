@@ -332,6 +332,126 @@ List<Customer> customers = customerRepository.findAllById(customerIds); // 1 que
       },
 
       {
+        id: 'use-records',
+        title: 'Classes DTO que deveriam ser Records',
+        description: `
+Detectar classes que são apenas containers de dados e podem ser substituídas por Java Records (Java 14+).
+
+❌ PROBLEMA:
+\`\`\`java
+public class CustomerDTO {
+    private final String name;
+    private final String email;
+    
+    public CustomerDTO(String name, String email) {
+        this.name = name;
+        this.email = email;
+    }
+    
+    public String getName() { return name; }
+    public String getEmail() { return email; }
+    
+    @Override
+    public boolean equals(Object o) { ... }
+    @Override
+    public int hashCode() { ... }
+}
+\`\`\`
+
+✅ RECOMENDAR:
+\`\`\`java
+public record CustomerDTO(String name, String email) {
+    // Validação no construtor compacto, se necessário
+    public CustomerDTO {
+        if (name == null || email == null) {
+            throw new IllegalArgumentException("Name and email are required");
+        }
+    }
+}
+\`\`\`
+
+💡 **AÇÃO:** Usar Records para classes DTO/Value Objects imutáveis. Records geram automaticamente: constructor, getters, equals(), hashCode(), toString().
+`,
+        severity: 'medium',
+        category: 'quality',
+        enabled: true,
+      },
+
+      {
+        id: 'optional-return',
+        title: 'Métodos que retornam null em vez de Optional',
+        description: `
+Detectar métodos que podem retornar null e não usam Optional<T>, tornando o código propenso a NullPointerException.
+
+❌ PROBLEMA:
+\`\`\`java
+public Customer findCustomerByEmail(String email) {
+    return customerRepository.findByEmail(email); // Pode retornar null
+}
+
+// No código cliente:
+Customer customer = service.findCustomerByEmail("test@example.com");
+customer.getName(); // 💥 NullPointerException se não houver cliente
+\`\`\`
+
+✅ RECOMENDAR:
+\`\`\`java
+public Optional<Customer> findCustomerByEmail(String email) {
+    return Optional.ofNullable(customerRepository.findByEmail(email));
+}
+
+// No código cliente:
+service.findCustomerByEmail("test@example.com")
+    .map(Customer::getName)
+    .orElse("Unknown");
+\`\`\`
+
+💡 **AÇÃO:** Usar Optional<T> para métodos que podem não retornar valor. Isso força o cliente a tratar explicitamente a ausência de valor.
+`,
+        severity: 'high',
+        category: 'quality',
+        enabled: true,
+      },
+
+      {
+        id: 'functional-immutable',
+        title: 'Código imperativo que pode ser funcional/imutável',
+        description: `
+Detectar código imperativo com loops e mutações que pode ser substituído por programação funcional (Stream API) e estruturas imutáveis.
+
+❌ PROBLEMA:
+\`\`\`java
+List<String> activeCustomerNames = new ArrayList<>();
+for (Customer customer : customers) {
+    if (customer.isActive()) {
+        activeCustomerNames.add(customer.getName().toUpperCase());
+    }
+}
+\`\`\`
+
+✅ RECOMENDAR:
+\`\`\`java
+List<String> activeCustomerNames = customers.stream()
+    .filter(Customer::isActive)
+    .map(Customer::getName)
+    .map(String::toUpperCase)
+    .collect(Collectors.toUnmodifiableList());
+\`\`\`
+
+**Benefícios:**
+- ✅ Código mais declarativo e legível
+- ✅ Menos propenso a bugs (sem mutações)
+- ✅ Fácil de testar e paralelizar
+- ✅ Composição de operações
+
+💡 **AÇÃO:** Usar Stream API, map/filter/reduce, e coleções imutáveis sempre que possível.
+`,
+        severity: 'medium',
+        category: 'quality',
+        enabled: true,
+      },
+
+      {
         id: 'method-refactoring',
         title: 'Métodos novos que podem ser refatorados',
         description: `

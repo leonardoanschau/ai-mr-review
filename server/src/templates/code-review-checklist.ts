@@ -83,41 +83,60 @@ public void createCustomer(Customer customer) {
         id: 'service-calling-service',
         title: 'Service chamando outro Service diretamente',
         description: `
+⚠️ **REGRA CRÍTICA:** Service NUNCA pode chamar outro Service diretamente. Sempre usar Facade.
+
 Verificar se um Service está chamando outro Service diretamente.
 
-❌ EVITAR:
+❌ PROIBIDO:
 \`\`\`java
 @Service
 public class OrderService {
     @Autowired
-    private CustomerService customerService; // Service chamando Service
+    private CustomerService customerService; // ❌ NUNCA fazer isso!
+    @Autowired
+    private PaymentService paymentService; // ❌ PROIBIDO!
     
     public void createOrder() {
-        customerService.getCustomer(); // ❌ Acoplamento direto
+        customerService.getCustomer(); // ❌ Service chamando Service
+        paymentService.process(); // ❌ Acoplamento direto
     }
 }
 \`\`\`
 
-✅ RECOMENDAR (Facade Pattern):
+✅ OBRIGATÓRIO - Usar Facade Pattern:
 \`\`\`java
-@Service
+@Component // Facade não é @Service
 public class OrderFacade {
-    @Autowired
-    private OrderService orderService;
-    @Autowired
-    private CustomerService customerService;
+    private final OrderService orderService;
+    private final CustomerService customerService;
+    private final PaymentService paymentService;
     
-    public void processOrder() {
+    public OrderFacade(OrderService orderService,
+                      CustomerService customerService,
+                      PaymentService paymentService) {
+        this.orderService = orderService;
+        this.customerService = customerService;
+        this.paymentService = paymentService;
+    }
+    
+    public void processOrder(OrderRequest request) {
         // Facade orquestra os serviços
-        customerService.getCustomer();
-        orderService.createOrder();
+        var customer = customerService.getCustomer(request.getCustomerId());
+        var order = orderService.createOrder(request);
+        paymentService.processPayment(order);
     }
 }
 \`\`\`
 
-💡 **AÇÃO:** Criar uma classe Facade para orquestrar a comunicação entre Services.
+**Regras de arquitetura:**
+- ✅ Service pode chamar: Repository, Mapper, Validator, Utils
+- ❌ Service NÃO pode chamar: outro Service
+- ✅ Facade orquestra múltiplos Services
+- ✅ Controller chama Facade (não Service diretamente)
+
+💡 **AÇÃO OBRIGATÓRIA:** Criar uma classe Facade para orquestrar a comunicação entre Services.
 `,
-        severity: 'high',
+        severity: 'critical',
         category: 'architecture',
         enabled: true,
       },
@@ -457,12 +476,14 @@ List<String> activeCustomerNames = customers.stream()
         description: `
 Verificar se métodos novos (com ++) podem ser refatorados em métodos menores, mais legíveis e usando programação funcional.
 
-**Critérios de análise:**
+**Critérios OBRIGATÓRIOS:**
 - ✅ Método faz apenas UMA coisa (Single Responsibility)
 - ✅ Nome do método é autoexplicativo
-- ✅ Método tem menos de 15-20 linhas
+- ✅ **Método tem NO MÁXIMO 10 LINHAS** (excluindo assinatura e chaves)
 - ✅ Não há lógica complexa aninhada (if dentro de if dentro de for)
 - ✅ Usa programação funcional quando possível (Stream API, Optional, etc)
+
+⚠️ **REGRA RÍGIDA:** Métodos com mais de 10 linhas DEVEM ser refatorados.
 
 ❌ EVITAR:
 \`\`\`java
@@ -557,6 +578,366 @@ Isso permitirá que o desenvolvedor aplique a sugestão com um clique.
       // ========================================
       // 💡 ADICIONE SUAS REGRAS AQUI
       // ========================================
+
+      {
+        id: 'dto-validation',
+        title: 'DTOs sem validações JSR-303',
+        description: `
+Detectar DTOs de request sem validações Bean Validation (JSR-303/380).
+
+❌ PROBLEMA:
+\`\`\`java
+@Data
+public class CreateOrderRequest {
+    private String customerId; // Sem validações
+    private List<OrderItem> items;
+    private Double totalAmount;
+}
+\`\`\`
+
+✅ RECOMENDAR:
+\`\`\`java
+@Data
+public class CreateOrderRequest {
+    @NotBlank(message = "Customer ID é obrigatório")
+    @Size(max = 36, message = "Customer ID inválido")
+    private String customerId;
+    
+    @NotNull(message = "Items são obrigatórios")
+    @NotEmpty(message = "Pedido deve ter pelo menos 1 item")
+    @Valid
+    private List<OrderItem> items;
+    
+    @NotNull(message = "Total é obrigatório")
+    @DecimalMin(value = "0.0", inclusive = false, message = "Total deve ser maior que zero")
+    private Double totalAmount;
+}
+\`\`\`
+
+💡 **AÇÃO:** Adicionar validações em todos os DTOs de request. Usar @Valid em cascata para objetos aninhados.
+`,
+        severity: 'high',
+        category: 'quality',
+        enabled: true,
+      },
+
+      {
+        id: 'missing-transactional',
+        title: 'Operações de escrita sem @Transactional',
+        description: `
+Detectar métodos que modificam dados sem controle transacional adequado.
+
+❌ PROBLEMA:
+\`\`\`java
+@Service
+public class OrderService {
+    public void createOrder(Order order) {
+        orderRepository.save(order);
+        inventoryRepository.decreaseStock(order.getItems()); // Se falhar aqui?
+        paymentService.processPayment(order); // E aqui?
+    }
+}
+\`\`\`
+
+✅ RECOMENDAR:
+\`\`\`java
+@Service
+public class OrderService {
+    @Transactional
+    public void createOrder(Order order) {
+        orderRepository.save(order);
+        inventoryRepository.decreaseStock(order.getItems());
+        paymentService.processPayment(order);
+    }
+    
+    // Ou para MongoDB (sem suporte transacional tradicional)
+    @Transactional // Spring Data MongoDB 2.1+
+    public void createOrder(Order order) {
+        // Operações serão agrupadas em uma sessão
+    }
+}
+\`\`\`
+
+💡 **AÇÃO:** Adicionar @Transactional em métodos que executam múltiplas operações de escrita. Para MongoDB, considerar usar sessões.
+`,
+        severity: 'high',
+        category: 'architecture',
+        enabled: true,
+      },
+
+      {
+        id: 'missing-logging',
+        title: 'Falta de logging em operações críticas',
+        description: `
+Verificar se operações críticas têm logging adequado para troubleshooting.
+
+❌ PROBLEMA:
+\`\`\`java
+@Service
+public class PaymentService {
+    public void processPayment(Order order) {
+        // Sem logs, difícil debugar em produção
+        paymentGateway.charge(order.getTotal());
+        order.setStatus(OrderStatus.PAID);
+    }
+}
+\`\`\`
+
+✅ RECOMENDAR:
+\`\`\`java
+@Slf4j
+@Service
+public class PaymentService {
+    public void processPayment(Order order) {
+        log.info("Processando pagamento para pedido: {}, valor: {}", 
+                 order.getId(), order.getTotal());
+        
+        try {
+            paymentGateway.charge(order.getTotal());
+            order.setStatus(OrderStatus.PAID);
+            log.info("Pagamento processado com sucesso: {}", order.getId());
+        } catch (PaymentException e) {
+            log.error("Erro ao processar pagamento do pedido: {}", order.getId(), e);
+            throw e;
+        }
+    }
+}
+\`\`\`
+
+**Níveis apropriados:**
+- ✅ INFO: Fluxo principal, operações bem-sucedidas
+- ✅ WARN: Situações anormais mas recuperáveis
+- ✅ ERROR: Erros que exigem atenção
+- ❌ EVITAR DEBUG/TRACE em produção sem controle
+
+💡 **AÇÃO:** Adicionar logs em: integrações externas, operações críticas de negócio, pontos de falha conhecidos, início/fim de processos longos.
+`,
+        severity: 'medium',
+        category: 'quality',
+        enabled: true,
+      },
+
+      {
+        id: 'magic-numbers-strings',
+        title: 'Magic numbers ou strings hardcoded',
+        description: `
+Detectar valores literais sem contexto que deveriam ser constantes nomeadas.
+
+❌ PROBLEMA:
+\`\`\`java
+public void processTemperature(Double temp) {
+    if (temp < 2.0 || temp > 8.0) { // O que significam esses valores?
+        sendAlert();
+    }
+}
+
+if (task.getName().contains("geladeira")) { // String hardcoded
+    // ...
+}
+\`\`\`
+
+✅ RECOMENDAR:
+\`\`\`java
+public class TemperatureConstants {
+    public static final Double FRIDGE_MIN_TEMP = 2.0;
+    public static final Double FRIDGE_MAX_TEMP = 8.0;
+    public static final String FRIDGE_KEYWORD = "geladeira";
+}
+
+public void processTemperature(Double temp) {
+    if (temp < FRIDGE_MIN_TEMP || temp > FRIDGE_MAX_TEMP) {
+        sendAlert();
+    }
+}
+
+if (task.getName().contains(FRIDGE_KEYWORD)) {
+    // ...
+}
+\`\`\`
+
+**Exceções aceitáveis:**
+- ✅ 0, 1, -1 em contextos óbvios (inicialização, comparação)
+- ✅ Strings em mensagens de log descritivas
+- ✅ Valores em testes unitários
+
+💡 **AÇÃO:** Extrair valores literais para constantes nomeadas. Usar Enums quando houver conjunto fixo de valores.
+`,
+        severity: 'medium',
+        category: 'quality',
+        enabled: true,
+      },
+
+      {
+        id: 'rest-api-standards',
+        title: 'Endpoints REST não seguem convenções',
+        description: `
+Verificar se endpoints seguem padrões REST e retornam status HTTP apropriados.
+
+❌ PROBLEMA:
+\`\`\`java
+@PostMapping("/createOrder") // Verbo na URL
+public String create(@RequestBody Order order) { // Retorna String
+    orderService.save(order);
+    return "Success"; // Status 200 sempre, mesmo em erro
+}
+
+@GetMapping("/order") // Singular para coleção
+public List<Order> getAll() { ... }
+\`\`\`
+
+✅ RECOMENDAR:
+\`\`\`java
+@PostMapping("/orders") // Substantivo plural, sem verbo
+@ResponseStatus(HttpStatus.CREATED) // 201 para criação
+public OrderResponse create(@RequestBody @Valid OrderRequest request) {
+    var order = orderService.create(request);
+    return orderMapper.toResponse(order);
+}
+
+@GetMapping("/orders") // Plural para coleção
+public List<OrderResponse> getAll() { ... }
+
+@GetMapping("/orders/{id}") // Singular para item específico
+public OrderResponse getById(@PathVariable String id) { ... }
+
+@PutMapping("/orders/{id}") // PUT para atualização completa
+@ResponseStatus(HttpStatus.OK)
+public OrderResponse update(@PathVariable String id, 
+                           @RequestBody @Valid OrderRequest request) { ... }
+
+@DeleteMapping("/orders/{id}")
+@ResponseStatus(HttpStatus.NO_CONTENT) // 204 para delete
+public void delete(@PathVariable String id) { ... }
+\`\`\`
+
+**Convenções:**
+- ✅ Usar substantivos no plural (/orders, /customers)
+- ✅ Evitar verbos na URL (POST /orders, não /createOrder)
+- ✅ Status HTTP corretos (201 Created, 204 No Content, 404 Not Found)
+- ✅ @Valid para validar requests
+- ✅ DTOs separados (Request/Response)
+
+💡 **AÇÃO:** Padronizar nomenclatura de endpoints e uso de status HTTP.
+`,
+        severity: 'medium',
+        category: 'architecture',
+        enabled: true,
+      },
+
+      {
+        id: 'mutable-collections-return',
+        title: 'Retornar coleções mutáveis expõe estado interno',
+        description: `
+Detectar métodos que retornam coleções mutáveis diretamente, permitindo modificação externa.
+
+❌ PROBLEMA:
+\`\`\`java
+@Data
+public class Order {
+    private List<OrderItem> items = new ArrayList<>();
+    
+    public List<OrderItem> getItems() {
+        return items; // Cliente pode fazer order.getItems().clear()!
+    }
+}
+\`\`\`
+
+✅ RECOMENDAR:
+\`\`\`java
+@Data
+public class Order {
+    private List<OrderItem> items = new ArrayList<>();
+    
+    public List<OrderItem> getItems() {
+        return Collections.unmodifiableList(items);
+        // Ou: return List.copyOf(items); (Java 10+)
+    }
+}
+
+// Ou melhor ainda, usar Record (imutável por padrão):
+public record Order(
+    String id,
+    List<OrderItem> items
+) {
+    public Order {
+        items = List.copyOf(items); // Cópia imutável
+    }
+}
+
+// Em Services:
+public List<Customer> getActiveCustomers() {
+    return customers.stream()
+        .filter(Customer::isActive)
+        .collect(Collectors.toUnmodifiableList()); // Imutável
+}
+\`\`\`
+
+💡 **AÇÃO:** Retornar coleções imutáveis de getters. Usar List.copyOf(), Collections.unmodifiable*(), ou Collectors.toUnmodifiableList().
+`,
+        severity: 'medium',
+        category: 'quality',
+        enabled: true,
+      },
+
+      {
+        id: 'field-injection',
+        title: 'Field injection em vez de constructor injection',
+        description: `
+Detectar uso de @Autowired em campos (field injection) em vez de constructor injection.
+
+❌ EVITAR:
+\`\`\`java
+@Service
+public class OrderService {
+    @Autowired
+    private OrderRepository orderRepository; // Field injection
+    
+    @Autowired
+    private PaymentService paymentService; // Difícil de testar
+}
+\`\`\`
+
+✅ RECOMENDAR:
+\`\`\`java
+@Service
+@RequiredArgsConstructor // Lombok gera constructor
+public class OrderService {
+    private final OrderRepository orderRepository;
+    private final PaymentService paymentService;
+    
+    // Constructor injection:
+    // - Facilita testes (pode passar mocks)
+    // - Torna dependências explícitas
+    // - Permite tornar campos final
+    // - Evita NPE
+}
+
+// Ou explicitamente:
+@Service
+public class OrderService {
+    private final OrderRepository orderRepository;
+    private final PaymentService paymentService;
+    
+    public OrderService(OrderRepository orderRepository,
+                       PaymentService paymentService) {
+        this.orderRepository = orderRepository;
+        this.paymentService = paymentService;
+    }
+}
+\`\`\`
+
+**Benefícios de constructor injection:**
+- ✅ Dependências são obrigatórias e imutáveis (final)
+- ✅ Fácil criar instância para testes
+- ✅ Evita NullPointerException
+- ✅ Torna dependências circulares óbvias
+
+💡 **AÇÃO:** Usar constructor injection com @RequiredArgsConstructor ou construtor explícito.
+`,
+        severity: 'low',
+        category: 'architecture',
+        enabled: true,
+      },
       
       // Exemplo de regra desabilitada:
       {

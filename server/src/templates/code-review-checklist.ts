@@ -581,9 +581,21 @@ Isso permitirá que o desenvolvedor aplique a sugestão com um clique.
 
       {
         id: 'dto-validation',
-        title: 'DTOs sem validações JSR-303',
+        title: 'DTOs de Request sem validações JSR-303',
         description: `
-Detectar DTOs de request sem validações Bean Validation (JSR-303/380).
+Detectar DTOs de **REQUEST** (usados em Controllers) sem validações Bean Validation (JSR-303/380).
+
+⚠️ **IMPORTANTE:** Esta regra aplica-se APENAS a classes de Request que são recebidas em Controllers via @RequestBody, @RequestParam, etc.
+
+**NÃO aplicar para:**
+- ❌ Classes Model internas (Implementation/Domain)
+- ❌ Classes Entity de persistência
+- ❌ Classes de Response (opcional, mas recomendado)
+- ❌ Classes DTO de integração entre camadas
+
+**APLICAR para:**
+- ✅ Classes *Request / *RequestModel em Controllers
+- ✅ Classes que representam input do usuário/API
 
 ❌ PROBLEMA:
 \`\`\`java
@@ -592,6 +604,14 @@ public class CreateOrderRequest {
     private String customerId; // Sem validações
     private List<OrderItem> items;
     private Double totalAmount;
+}
+
+@RestController
+public class OrderController {
+    @PostMapping("/orders")
+    public void create(@RequestBody @Valid CreateOrderRequest request) {
+        // @Valid vai validar, mas sem anotações não valida nada!
+    }
 }
 \`\`\`
 
@@ -614,7 +634,28 @@ public class CreateOrderRequest {
 }
 \`\`\`
 
-💡 **AÇÃO:** Adicionar validações em todos os DTOs de request. Usar @Valid em cascata para objetos aninhados.
+✅ EXEMPLO - Classes que NÃO precisam de validação:
+\`\`\`java
+// ✅ CORRETO - Model interno não precisa de validação JSR-303
+@Data
+@Document(collection = "orders")
+public class OrderImplementationModel {
+    private String customerId;
+    private List<OrderItem> items;
+    private Double totalAmount;
+    // Validação é feita na camada de Request, não aqui
+}
+
+// ✅ CORRETO - Response também não precisa
+@Data
+public class OrderResponse {
+    private String orderId;
+    private String status;
+    // Response é construído internamente, já validado
+}
+\`\`\`
+
+💡 **AÇÃO:** Adicionar validações APENAS em DTOs de Request usados em Controllers. Usar @Valid em cascata para objetos aninhados. Classes Model/Entity internas NÃO precisam de validações JSR-303.
 `,
         severity: 'high',
         category: 'quality',

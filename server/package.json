@@ -1,7 +1,7 @@
 {
-  "name": "gitlab-mcp-server",
+  "name": "gitlabmcp-anschauti-server",
   "version": "1.0.0",
-  "description": "GitLab MCP Server - Model Context Protocol server for GitLab integration",
+  "description": "GitlabMCP-AnschauTI Server - Model Context Protocol server for GitLab integration",
   "main": "dist/server.js",
   "type": "module",
   "scripts": {

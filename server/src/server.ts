@@ -90,7 +90,7 @@ class McpServer {
         tools: {},
       },
       serverInfo: {
-        name: 'gitlab-mcp-server',
+        name: 'GitlabMCP-AnschauTI',
         version: '1.0.0',
       },
     };

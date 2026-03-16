@@ -1,4 +1,4 @@
-# 🚀 GitLab MCP for VS Code
+# 🚀 GitlabMCP-AnschauTI
 
 **Version 1.0.0** | MIT License
 

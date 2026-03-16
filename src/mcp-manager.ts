@@ -105,7 +105,7 @@ export class MCPManager {
             const env = await this.configManager.getEnvironmentVariables();
             
             mcpConfig.servers = mcpConfig.servers || {};
-            mcpConfig.servers['gitlab-mcp-anschauti-tools-server'] = {
+            mcpConfig.servers['GitlabMCP-AnschauTI'] = {
                 command: 'node',  // Use Node.js from VS Code
                 args: [serverScriptPath],
                 env: env,
@@ -143,8 +143,8 @@ export class MCPManager {
             const mcpConfig = JSON.parse(content);
 
             // Remove servidor
-            if (mcpConfig.servers && mcpConfig.servers['gitlab-mcp-anschauti-tools-server']) {
-                delete mcpConfig.servers['gitlab-mcp-anschauti-tools-server'];
+            if (mcpConfig.servers && mcpConfig.servers['GitlabMCP-AnschauTI']) {
+                delete mcpConfig.servers['GitlabMCP-AnschauTI'];
                 this.outputChannel.appendLine(`✅ Servidor removido do mcp.json`);
             }
             

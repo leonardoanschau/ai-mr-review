@@ -10,7 +10,10 @@ export class McpToolsDefinition {
     return {
       name: 'list_gitlab_projects',
       description:
-        '⚠️ OBRIGATÓRIO CHAMAR PRIMEIRO ⚠️ Lista todos os projetos GitLab do grupo CRM (incluindo subgrupos recursivamente). SEMPRE use esta tool ANTES de criar uma issue para o usuário escolher o projeto correto.',
+        '📋 Lista todos os projetos GitLab do grupo CRM (incluindo subgrupos recursivamente). ' +
+        '⚠️ OBRIGATÓRIO: Chamar ANTES de create_gitlab_issue para usuário escolher o projeto. ' +
+        'Retorna: Array com {id, name, path_with_namespace} de cada projeto. ' +
+        'Exemplo output: [{"id": 1234, "name": "customer-job", "path_with_namespace": "grupopanvel/varejo/crm/services/customer/customer-job"}]',
       inputSchema: {
         type: 'object',
         properties: {},
@@ -23,35 +26,39 @@ export class McpToolsDefinition {
     return {
       name: 'create_gitlab_issue',
       description:
-        "Cria uma nova issue no GitLab com título e descrição fornecidos. ⚠️ IMPORTANTE: NUNCA use esta tool sem antes chamar 'list_gitlab_projects' e pedir para o usuário escolher o projeto. O GitHub Copilot deve gerar o título e descrição antes de chamar esta tool.",
+        '✍️ Cria issue no GitLab. ' +
+        '⚠️ WORKFLOW: 1) Chamar list_gitlab_projects primeiro, 2) Usuário escolhe projeto, 3) Criar issue. ' +
+        'Título DEVE ter prefixo [US], [TD] ou [BUG]. ' +
+        'Exemplo input: {"project_name": "customer-job", "title": "[US] Implementar feature X", "description": "## Descrição\\n..." }. ' +
+        'Retorna: {"iid": 42, "web_url": "http://gitlab.dimed.com.br/.../issues/42"}',
       inputSchema: {
         type: 'object',
         properties: {
           project_name: {
             type: 'string',
             description:
-              "Nome EXATO do projeto escolhido pelo usuário da lista (ex: 'Acompanhamento', 'Atividades'). OBRIGATÓRIO.",
+              "Nome EXATO do projeto da lista (ex: 'customer-job', 'shelf-price-check-bff'). Case-sensitive.",
           },
           title: {
             type: 'string',
             description:
-              'Título completo da issue incluindo prefixo [US], [TD] ou [BUG] se aplicável. OBRIGATÓRIO.',
+              'Título COM prefixo obrigatório: [US] para User Story, [TD] para Technical Debt, [BUG] para Bug. Ex: "[US] Implementar endpoint de consulta"',
           },
           description: {
             type: 'string',
             description:
-              'Descrição completa da issue em Markdown seguindo o template padrão. OBRIGATÓRIO.',
+              'Descrição em Markdown seguindo template (use get_gitlab_issue_template para ver formato). Deve incluir seções: Descrição, Critérios de Aceite, DoD.',
           },
           assignee: {
             type: 'string',
             description:
-              'Username do responsável (opcional, usa assignee padrão configurado se omitido)',
+              'Username GitLab (não nome completo). Ex: "joaom", não "Joao Guilherme". Opcional.',
           },
           labels: {
             type: 'array',
             items: { type: 'string' },
             description:
-              "Labels da issue (opcional, padrão: ['Grupo Panvel :: Analyze', 'User Story'])",
+              'Array de strings. Padrão se omitido: ["Grupo Panvel :: Analyze", "User Story"]. Ex: ["Bug", "Alta prioridade"]',
           },
         },
         required: ['project_name', 'title', 'description'],
@@ -63,7 +70,10 @@ export class McpToolsDefinition {
     return {
       name: 'get_gitlab_issue_template',
       description:
-        'Retorna o template padrão completo para issues do GitLab. Use para orientar a criação de descrições. O Copilot deve preencher o template com o contexto fornecido pelo usuário.',
+        '📝 Retorna template padrão de issues em Markdown. ' +
+        'Inclui seções: Descrição, Critérios de Aceite, DoD (Definition of Done), Observações. ' +
+        'Use ANTES de create_gitlab_issue para mostrar formato esperado ao usuário. ' +
+        'Sem parâmetros de entrada. Output: String Markdown pronta para customizar.',
       inputSchema: {
         type: 'object',
         properties: {},
@@ -76,29 +86,35 @@ export class McpToolsDefinition {
     return {
       name: 'review_gitlab_merge_request',
       description:
-        'Analisa um Merge Request do GitLab retornando APENAS as linhas ADICIONADAS (com +) e checklist de code review. A IA deve focar SOMENTE no código NOVO, ignorando código removido ou de contexto. Esta tool NÃO posta comentários - apenas retorna a análise. Use post_merge_request_comments para postar os comentários.',
+        '🔍 Analisa Merge Request retornando arquivo texto (10-50KB) com: ' +
+        '1) Metadados (título, autor, branch), ' +
+        '2) Checklist completo (19 regras), ' +
+        '3) Arquivos alterados com APENAS linhas ADICIONADAS (+). ' +
+        '⚠️ IMPORTANTE: Linhas marcadas com 💬 são "comentáveis" (aceitas por post_merge_request_comments). ' +
+        '⚠️ NÃO posta comentários - apenas retorna análise. ' +
+        'Exemplo input: {"mr_url": "http://gitlab.dimed.com.br/.../merge_requests/3", "review_focus": "all"}',
       inputSchema: {
         type: 'object',
         properties: {
           mr_url: {
             type: 'string',
             description:
-              'URL completa do Merge Request (ex: http://gitlab.com/grupo/projeto/-/merge_requests/123)',
+              'URL completa do MR (ex: http://gitlab.dimed.com.br/grupopanvel/varejo/crm/services/customer/customer-job/-/merge_requests/3). Recomendado.',
           },
           project_id: {
             type: 'number',
             description:
-              'ID do projeto GitLab (use se não fornecer mr_url)',
+              'ID numérico do projeto GitLab. Use SE não fornecer mr_url. Alternativa ao mr_url.',
           },
           mr_iid: {
             type: 'number',
             description:
-              'IID (número) do Merge Request no projeto (use se não fornecer mr_url)',
+              'IID (número !X) do MR no projeto. Use SE não fornecer mr_url. Requer project_id junto.',
           },
           review_focus: {
             type: 'string',
             description:
-              'Foco da revisão: "security" (segurança), "performance" (performance), "best_practices" (boas práticas), "bugs" (bugs potenciais), ou "all" (tudo). Padrão: "all"',
+              'Filtro opcional: "security" (só segurança), "performance" (só performance), "best_practices" (boas práticas), "bugs" (bugs), "all" (todas as 19 regras). Padrão: "all".',
             enum: ['security', 'performance', 'best_practices', 'bugs', 'all'],
           },
         },
@@ -111,46 +127,56 @@ export class McpToolsDefinition {
     return {
       name: 'post_merge_request_comments',
       description:
-        'Posta comentários de code review em linhas específicas de um Merge Request do GitLab. Use após analisar o MR com review_gitlab_merge_request. Cada comentário será postado na linha exata do arquivo especificado.',
+        '💬 Posta comentários inline em linhas específicas de um MR. ' +
+        'Use DEPOIS de review_gitlab_merge_request. ' +
+        '⚠️ LIMITAÇÃO CRÍTICA: Apenas linhas com 💬 (linhas ADICIONADAS no diff) aceitam comentários. Linhas de contexto retornam erro "Linha X não está no diff". ' +
+        'new_line = número da linha no arquivo NOVO (depois das mudanças). ' +
+        'Retorna: {success_count, failed_count, detalhes}. ' +
+        'Exemplo input: {"mr_url": "...", "comments": [{"file_path": "src/Service.java", "new_line": 42, "body": "🔴 **CRITICAL**\\n\\nProblema..."}]}',
       inputSchema: {
         type: 'object',
         properties: {
           mr_url: {
             type: 'string',
             description:
-              'URL completa do Merge Request (ex: http://gitlab.com/grupo/projeto/-/merge_requests/123)',
+              'URL completa do MR (ex: http://gitlab.dimed.com.br/grupopanvel/.../merge_requests/3). Recomendado.',
           },
           project_id: {
             type: 'number',
             description:
-              'ID do projeto GitLab (use se não fornecer mr_url)',
+              'ID numérico do projeto GitLab. Use SE não fornecer mr_url.',
           },
           mr_iid: {
             type: 'number',
             description:
-              'IID (número) do Merge Request no projeto (use se não fornecer mr_url)',
+              'IID (número !X) do MR. Use SE não fornecer mr_url. Requer project_id.',
           },
           comments: {
             type: 'array',
             description:
-              'Lista de comentários a serem postados. Cada comentário deve conter: file_path, new_line, e body (texto do comentário)',
+              'Array de comentários. Cada item: {file_path, new_line, body, severity?}. ⚠️ new_line DEVE ser linha ADICIONADA (com 💬 no review).',
             items: {
               type: 'object',
               properties: {
                 file_path: {
                   type: 'string',
                   description:
-                    'Caminho completo do arquivo (ex: src/main/java/com/example/Service.java)',
+                    'Caminho COMPLETO do arquivo (ex: implementation/src/main/java/br/com/dimed/Service.java). Must match exatamente o path do diff.',
                 },
                 new_line: {
                   type: 'number',
                   description:
-                    'Número da linha no arquivo NOVO/modificado onde o comentário será postado',
+                    'Número da linha no arquivo NOVO (após as mudanças). DEVE ser linha ADICIONADA (+) no diff. Ex: 19, 42, 80. Não usar old_line.',
                 },
                 body: {
                   type: 'string',
                   description:
-                    'Texto do comentário em Markdown. Use formato:\n\n**⚠️ Problema**: Descrição do problema encontrado\n\n**✅ Solução**: Sugestão de como corrigir\n\n**Severidade**: CRITICAL/HIGH/MEDIUM/LOW',
+                    'Texto Markdown. Formato recomendado: "🔴 **CRITICAL**\\n\\n**Problema**: ...\\n\\n**Solução**: ...\\n\\n```suggestion\\ncódigo corrigido\\n```". Use emojis: 🔴 CRITICAL | 🟠 HIGH | 🟡 MEDIUM | ⚪ LOW.',
+                },
+                severity: {
+                  type: 'string',
+                  description:
+                    'Opcional. "CRITICAL", "HIGH", "MEDIUM", ou "LOW". Apenas para metadados, não afeta GitLab.',
                 },
               },
               required: ['file_path', 'new_line', 'body'],

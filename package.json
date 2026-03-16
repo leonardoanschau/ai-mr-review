@@ -1,6 +1,6 @@
 {
-  "name": "gitlab-mcp",
-  "displayName": "GitLab MCP Tools",
+  "name": "gitlabmcp-anschauti",
+  "displayName": "GitlabMCP-AnschauTI",
   "description": "GitLab productivity tools - Create issues, list projects, and templates using GitHub Copilot",
   "version": "1.0.0",
   "publisher": "AnschauTI",

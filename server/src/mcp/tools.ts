@@ -252,10 +252,11 @@ export class McpToolsDefinition {
       name: 'create_dev_tasks_from_issue',
       description:
         '🔨 Cria automaticamente issues [DEV] derivadas de uma US/TD/BUG. ' +
-        'Extrai tarefas da seção "## ✅ Tarefas" ou sugere decomposição baseada no conteúdo. ' +
+        'Extrai tarefas APENAS da seção "## ✅ Tarefas" ou "## Tarefas" (IGNORA checkboxes de "Critérios de Aceite" ou outras seções). ' +
+        'Se não houver seção de Tarefas e auto_suggest=true, sugere decomposição baseada no conteúdo. ' +
         'Para cada tarefa, permite escolher o projeto alvo e cria issue [DEV] vinculada à issue pai via "relates_to". ' +
-        'Exemplo uso: Após criar US #1038, executar create_dev_tasks_from_issue({parent_issue_url: "http://gitlab.../issues/1038", auto_suggest: true}). ' +
-        'Workflow: 1) Parser tarefas, 2) Para cada tarefa: listar projetos e perguntar qual, 3) Criar issues [DEV] linkadas.',
+        'Exemplo uso: Após criar US #1038, executar create_dev_tasks_from_issue({parent_issue_url: "http://gitlab.../issues/1038"}). ' +
+        'Workflow: 1) Parser tarefas da seção dedicada, 2) Para cada tarefa: listar projetos e perguntar qual, 3) Criar issues [DEV] linkadas.',
       inputSchema: {
         type: 'object',
         properties: {

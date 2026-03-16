@@ -2,7 +2,7 @@
   "name": "gitlabmcp-anschauti",
   "displayName": "GitlabMCP-AnschauTI",
   "description": "GitLab productivity tools - Create issues, list projects, and templates using GitHub Copilot",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "publisher": "AnschauTI",
   "repository": {
     "type": "git",

@@ -13,7 +13,11 @@ export interface ParsedTask {
 
 /**
  * Parse tarefas de uma descrição Markdown
- * Busca por checkboxes no formato:
+ * Busca por checkboxes APENAS na seção "## ✅ Tarefas" ou "## Tarefas"
+ * IGNORA checkboxes em outras seções como "Critérios de Aceite"
+ * 
+ * Formato esperado:
+ * ## ✅ Tarefas
  * - [ ] Tarefa 1
  * - [x] Tarefa 2
  * - [ ] Tarefa 3
@@ -21,16 +25,37 @@ export interface ParsedTask {
 export function parseTasksFromDescription(description: string): ParsedTask[] {
   const tasks: ParsedTask[] = [];
   
+  // Regex para encontrar a seção de Tarefas (com ou sem emoji)
+  const tasksSectionRegex = /^##\s*[✅]?\s*Tarefas\s*$/im;
+  const tasksSectionMatch = description.match(tasksSectionRegex);
+  
+  if (!tasksSectionMatch) {
+    logger.info('No "## Tarefas" section found in description');
+    return tasks;
+  }
+  
+  // Encontra o índice onde a seção de Tarefas começa
+  const tasksStartIndex = tasksSectionMatch.index! + tasksSectionMatch[0].length;
+  
+  // Encontra o próximo heading de nível 2 (##) após a seção de Tarefas
+  const remainingText = description.substring(tasksStartIndex);
+  const nextSectionMatch = remainingText.match(/^##\s+/m);
+  
+  // Extrai apenas o conteúdo da seção de Tarefas
+  const tasksSection = nextSectionMatch 
+    ? remainingText.substring(0, nextSectionMatch.index)
+    : remainingText;
+  
   // Regex para capturar checkboxes com ou sem marcação
   const checkboxRegex = /^[\s]*-\s*\[([ x])\]\s+(.+)$/gim;
   
   let match: RegExpExecArray | null;
   let index = 0;
   
-  while ((match = checkboxRegex.exec(description)) !== null) {
+  while ((match = checkboxRegex.exec(tasksSection)) !== null) {
     const taskText = match[2].trim();
     
-    // Ignora tarefas muito curtas ou já marcadas como concluídas
+    // Ignora tarefas muito curtas
     if (taskText.length < 5) {
       continue;
     }
@@ -42,7 +67,7 @@ export function parseTasksFromDescription(description: string): ParsedTask[] {
     });
   }
   
-  logger.info(`Parsed ${tasks.length} tasks from description`);
+  logger.info(`Parsed ${tasks.length} tasks from "## Tarefas" section (ignored checkboxes from other sections)`);
   return tasks;
 }
 

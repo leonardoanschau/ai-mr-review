@@ -54,8 +54,8 @@ interface PostMergeRequestCommentsArgs {
 
 interface CreateDevTasksArgs {
   parent_issue_url: string;
+  default_project: string;
   auto_suggest?: boolean;
-  default_project?: string;
   assignee?: string;
 }
 
@@ -482,14 +482,11 @@ export class McpToolHandlers {
       // 4. Para cada tarefa, criar issue [DEV]
       const createdIssues: Array<{ task: string; issue: any; project: string }> = [];
       
-      // 5. Se default_project foi especificado, usar para todas as tarefas
-      let defaultProject: any = null;
-      if (args.default_project) {
-        defaultProject = await this.projectService.findProjectByName(
-          args.default_project,
-          config.defaultGroup
-        );
-      }
+      // 5. Buscar projeto especificado (obrigatório)
+      const targetProject = await this.projectService.findProjectByName(
+        args.default_project,
+        config.defaultGroup
+      );
 
       // Buscar assignee
       const assigneeUsername = args.assignee || config.defaultAssignee;
@@ -502,20 +499,9 @@ export class McpToolHandlers {
 
       for (const task of tasks) {
         try {
-          // Usar default_project se especificado
-          const targetProject = defaultProject;
-          
-          if (!targetProject) {
-            // Aqui precisamos retornar informação para o usuário escolher
-            // Por enquanto, vamos criar todas no mesmo projeto da issue pai
-            logger.info(`Creating task "${task.title}" in parent project`);
-          }
-
-          const projectToUse = targetProject || parentProject;
-
-          // Criar issue [DEV]
+          // Criar issue [DEV] no projeto especificado
           const devIssue = await this.issueService.createIssue({
-            projectId: projectToUse.id,
+            projectId: targetProject.id,
             title: `[DEV] ${task.title}`,
             description: 
               `**Issue Pai:** ${parentIssue.title} (#${parentIssue.iid})\n` +
@@ -526,7 +512,7 @@ export class McpToolHandlers {
 
           // Criar link entre as issues (relates_to)
           await this.api.createIssueLink(
-            projectToUse.id,
+            targetProject.id,
             devIssue.iid,
             parentProject.id,
             parentIssue.iid,
@@ -536,7 +522,7 @@ export class McpToolHandlers {
           createdIssues.push({
             task: task.title,
             issue: devIssue,
-            project: projectToUse.name,
+            project: targetProject.name,
           });
 
           logger.info(`Created [DEV] issue #${devIssue.iid} for task: ${task.title}`);

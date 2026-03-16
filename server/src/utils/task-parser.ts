@@ -39,7 +39,7 @@ export function parseTasksFromDescription(description: string): ParsedTask[] {
   
   // Encontra o próximo heading de nível 2 (##) após a seção de Tarefas
   const remainingText = description.substring(tasksStartIndex);
-  const nextSectionMatch = remainingText.match(/^##\s+/m);
+  const nextSectionMatch = remainingText.match(/^##/m);
   
   // Extrai apenas o conteúdo da seção de Tarefas
   const tasksSection = nextSectionMatch 

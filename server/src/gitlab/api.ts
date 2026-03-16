@@ -109,6 +109,11 @@ interface CreateIssueParams {
   description: string;
   assignee_ids: number[];
   labels: string[];
+  issue_links?: {
+    target_project_id: number;
+    target_issue_iid: number;
+    link_type: 'relates_to' | 'blocks' | 'is_blocked_by';
+  }[];
 }
 
 export class GitLabApiClient {
@@ -252,6 +257,64 @@ export class GitLabApiClient {
 
     logger.info(`Issue created: #${issue.iid} - ${issue.web_url}`);
     return issue;
+  }
+
+  /**
+   * Parse issue URL and return project ID and issue IID
+   * Example URL: http://gitlab.dimed.com.br/grupopanvel/varejo/crm/services/user-stories/-/issues/1038
+   */
+  parseIssueUrl(url: string): { projectPath: string; issueIid: number } {
+    const regex = /^https?:\/\/[^\/]+\/(.+?)\/-\/issues\/(\d+)$/;
+    const match = url.match(regex);
+    
+    if (!match) {
+      throw new GitLabApiError(`Invalid issue URL format: ${url}`);
+    }
+
+    return {
+      projectPath: match[1],
+      issueIid: parseInt(match[2], 10),
+    };
+  }
+
+  /**
+   * Get issue by URL
+   */
+  async getIssueByUrl(url: string): Promise<{ project: GitLabProject; issue: GitLabIssue }> {
+    logger.info(`Fetching issue from URL: ${url}`);
+    
+    const { projectPath, issueIid } = this.parseIssueUrl(url);
+    const project = await this.getProjectByPath(projectPath);
+    const issue = await this.getIssue(project.id, issueIid);
+
+    return { project, issue };
+  }
+
+  /**
+   * Create issue link (relates_to, blocks, is_blocked_by)
+   */
+  async createIssueLink(
+    projectId: number,
+    issueIid: number,
+    targetProjectId: number,
+    targetIssueIid: number,
+    linkType: 'relates_to' | 'blocks' | 'is_blocked_by' = 'relates_to'
+  ): Promise<void> {
+    logger.info(`Creating ${linkType} link from #${issueIid} to project ${targetProjectId} issue #${targetIssueIid}`);
+    
+    await this.makeRequest(
+      `/projects/${projectId}/issues/${issueIid}/links`,
+      {
+        method: 'POST',
+        body: {
+          target_project_id: targetProjectId,
+          target_issue_iid: targetIssueIid,
+          link_type: linkType,
+        },
+      }
+    );
+
+    logger.info(`Issue link created successfully`);
   }
 
   async getMergeRequest(

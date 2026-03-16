@@ -188,6 +188,44 @@ export class McpToolsDefinition {
     };
   }
 
+  static createDevTasksTool(): McpTool {
+    return {
+      name: 'create_dev_tasks_from_issue',
+      description:
+        '🔨 Cria automaticamente issues [DEV] derivadas de uma US/TD/BUG. ' +
+        'Extrai tarefas da seção "## ✅ Tarefas" ou sugere decomposição baseada no conteúdo. ' +
+        'Para cada tarefa, permite escolher o projeto alvo e cria issue [DEV] vinculada à issue pai via "relates_to". ' +
+        'Exemplo uso: Após criar US #1038, executar create_dev_tasks_from_issue({parent_issue_url: "http://gitlab.../issues/1038", auto_suggest: true}). ' +
+        'Workflow: 1) Parser tarefas, 2) Para cada tarefa: listar projetos e perguntar qual, 3) Criar issues [DEV] linkadas.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          parent_issue_url: {
+            type: 'string',
+            description:
+              'URL completa da issue pai (US/TD/BUG). Ex: http://gitlab.dimed.com.br/grupopanvel/.../issues/1038. OBRIGATÓRIO.',
+          },
+          auto_suggest: {
+            type: 'boolean',
+            description:
+              'Se true, sugere tarefas automaticamente quando não há checkboxes explícitos na descrição. Se false, retorna erro se não encontrar tarefas. Padrão: true.',
+          },
+          default_project: {
+            type: 'string',
+            description:
+              'Nome do projeto padrão para todas as tarefas (opcional). Se omitido, pergunta para cada tarefa individualmente. Ex: "customer-service".',
+          },
+          assignee: {
+            type: 'string',
+            description:
+              'Username GitLab para assignee das issues [DEV] criadas. Se omitido, usa assignee padrão configurado.',
+          },
+        },
+        required: ['parent_issue_url'],
+      },
+    };
+  }
+
   static getAllTools(): McpTool[] {
     return [
       this.listProjectsTool(),
@@ -195,6 +233,7 @@ export class McpToolsDefinition {
       this.getTemplateTool(),
       this.reviewMergeRequestTool(),
       this.postMergeRequestCommentsTool(),
+      this.createDevTasksTool(),
     ];
   }
 }

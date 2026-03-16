@@ -13,6 +13,7 @@ import { CodeReviewChecklist } from '../templates/code-review-checklist.js';
 import { ConfigManager } from '../utils/config.js';
 import { logger } from '../utils/logger.js';
 import { BusinessContextExtractor } from '../utils/business-context.js';
+import { parseTasksFromDescription, suggestTasksFromDescription } from '../utils/task-parser.js';
 
 interface CreateIssueArgs {
   project_name: string;
@@ -38,6 +39,13 @@ interface PostMergeRequestCommentsArgs {
     new_line: number;
     body: string;
   }>;
+}
+
+interface CreateDevTasksArgs {
+  parent_issue_url: string;
+  auto_suggest?: boolean;
+  default_project?: string;
+  assignee?: string;
 }
 
 export class McpToolHandlers {
@@ -346,6 +354,130 @@ export class McpToolHandlers {
     }
   }
 
+  async handleCreateDevTasks(args: CreateDevTasksArgs): Promise<McpToolResult> {
+    try {
+      const config = ConfigManager.getConfig();
+      const autoSuggest = args.auto_suggest !== false; // default true
+
+      // 1. Buscar issue pai
+      logger.info(`Fetching parent issue: ${args.parent_issue_url}`);
+      const { project: parentProject, issue: parentIssue } = await this.api.getIssueByUrl(
+        args.parent_issue_url
+      );
+
+      // 2. Extrair tarefas da descrição
+      let tasks = parseTasksFromDescription(parentIssue.description);
+
+      // 3. Se não encontrou tarefas e auto_suggest=true, gerar sugestões
+      if (tasks.length === 0) {
+        if (autoSuggest) {
+          logger.info('No explicit tasks found, suggesting tasks based on content');
+          tasks = suggestTasksFromDescription(parentIssue.description, parentIssue.title);
+        } else {
+          return this.createErrorResult(
+            'Nenhuma tarefa encontrada na descrição da issue. ' +
+            'Adicione checkboxes no formato "- [ ] Tarefa" ou use auto_suggest=true'
+          );
+        }
+      }
+
+      logger.info(`Found ${tasks.length} tasks to create`);
+
+      // 4. Para cada tarefa, criar issue [DEV]
+      const createdIssues: Array<{ task: string; issue: any; project: string }> = [];
+      
+      // 5. Se default_project foi especificado, usar para todas as tarefas
+      let defaultProject: any = null;
+      if (args.default_project) {
+        defaultProject = await this.projectService.findProjectByName(
+          args.default_project,
+          config.defaultGroup
+        );
+      }
+
+      // Buscar assignee
+      const assigneeUsername = args.assignee || config.defaultAssignee;
+      if (!assigneeUsername) {
+        return this.createErrorResult(
+          'Assignee não especificado e GITLAB_DEFAULT_ASSIGNEE não configurado'
+        );
+      }
+      const user = await this.api.getUserByUsername(assigneeUsername);
+
+      for (const task of tasks) {
+        try {
+          // Usar default_project se especificado
+          const targetProject = defaultProject;
+          
+          if (!targetProject) {
+            // Aqui precisamos retornar informação para o usuário escolher
+            // Por enquanto, vamos criar todas no mesmo projeto da issue pai
+            logger.info(`Creating task "${task.title}" in parent project`);
+          }
+
+          const projectToUse = targetProject || parentProject;
+
+          // Criar issue [DEV]
+          const devIssue = await this.issueService.createIssue({
+            projectId: projectToUse.id,
+            title: `[DEV] ${task.title}`,
+            description: 
+              `**Issue Pai:** ${parentIssue.title} (#${parentIssue.iid})\n` +
+              `**URL:** ${parentIssue.web_url}\n\n---\n\n${task.description}`,
+            assigneeId: user.id,
+            labels: ['Development', 'Grupo Panvel :: Analyze'],
+          });
+
+          // Criar link entre as issues (relates_to)
+          await this.api.createIssueLink(
+            projectToUse.id,
+            devIssue.iid,
+            parentProject.id,
+            parentIssue.iid,
+            'relates_to'
+          );
+
+          createdIssues.push({
+            task: task.title,
+            issue: devIssue,
+            project: projectToUse.name,
+          });
+
+          logger.info(`Created [DEV] issue #${devIssue.iid} for task: ${task.title}`);
+        } catch (error) {
+          logger.error(`Failed to create task "${task.title}"`, { error });
+          // Continue com próxima tarefa
+        }
+      }
+
+      // Formatar resultado
+      let resultText = `✅ **${createdIssues.length} de ${tasks.length} issues [DEV] criadas com sucesso!**\n\n`;
+      resultText += `📌 **Issue Pai:** ${parentIssue.title} (#${parentIssue.iid})\n`;
+      resultText += `🔗 ${parentIssue.web_url}\n\n`;
+      resultText += `---\n\n`;
+      resultText += `📋 **Issues [DEV] Criadas:**\n\n`;
+
+      createdIssues.forEach((created, index) => {
+        resultText += `**${index + 1}. [DEV] ${created.task}**\n`;
+        resultText += `   - Projeto: ${created.project}\n`;
+        resultText += `   - Issue: #${created.issue.iid}\n`;
+        resultText += `   - URL: ${created.issue.web_url}\n`;
+        resultText += `   - Linked: relates_to #${parentIssue.iid}\n\n`;
+      });
+
+      if (createdIssues.length < tasks.length) {
+        const failed = tasks.length - createdIssues.length;
+        resultText += `\n⚠️ ${failed} tarefa(s) falharam ao criar. Verifique os logs.`;
+      }
+
+      return this.createSuccessResult(resultText);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Error creating dev tasks', { error: message });
+      return this.createErrorResult(message);
+    }
+  }
+
   async handleToolCall(toolName: string, args: unknown): Promise<McpToolResult> {
     logger.info(`Handling tool call: ${toolName}`);
 
@@ -364,6 +496,9 @@ export class McpToolHandlers {
 
       case 'post_merge_request_comments':
         return await this.handlePostMergeRequestComments(args as PostMergeRequestCommentsArgs);
+
+      case 'create_dev_tasks_from_issue':
+        return await this.handleCreateDevTasks(args as CreateDevTasksArgs);
 
       default:
         return this.createErrorResult(`Unknown tool: ${toolName}`);

@@ -23,6 +23,17 @@ interface CreateIssueArgs {
   labels?: string[];
 }
 
+interface UpdateIssueArgs {
+  issue_url?: string;
+  project_name?: string;
+  issue_iid?: number;
+  title?: string;
+  description?: string;
+  assignee?: string;
+  labels?: string[];
+  state_event?: 'close' | 'reopen';
+}
+
 interface ReviewMergeRequestArgs {
   mr_url?: string;
   project_id?: number;
@@ -155,6 +166,91 @@ export class McpToolHandlers {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.error('Error creating issue', { error: message });
+      return this.createErrorResult(message);
+    }
+  }
+
+  async handleUpdateIssue(args: UpdateIssueArgs): Promise<McpToolResult> {
+    try {
+      const config = ConfigManager.getConfig();
+      const groupPath = config.defaultGroup;
+
+      if (!groupPath) {
+        return this.createErrorResult(
+          'GITLAB_DEFAULT_GROUP não configurado nas variáveis de ambiente'
+        );
+      }
+
+      let projectId: number;
+      let issueIid: number;
+
+      // Parse URL if provided, otherwise use project_name + issue_iid
+      if (args.issue_url) {
+        const { project, issue } = await this.api.getIssueByUrl(args.issue_url);
+        projectId = project.id;
+        issueIid = issue.iid;
+      } else if (args.project_name && args.issue_iid) {
+        const project = await this.projectService.findProjectByName(
+          args.project_name,
+          groupPath
+        );
+        projectId = project.id;
+        issueIid = args.issue_iid;
+      } else {
+        return this.createErrorResult(
+          'Forneça issue_url OU (project_name + issue_iid)'
+        );
+      }
+
+      // Build update params (only include fields that were provided)
+      const updateParams: any = {};
+
+      if (args.title !== undefined) {
+        updateParams.title = args.title;
+      }
+
+      if (args.description !== undefined) {
+        updateParams.description = args.description;
+      }
+
+      if (args.assignee !== undefined) {
+        const user = await this.api.getUserByUsername(args.assignee);
+        updateParams.assignee_ids = [user.id];
+      }
+
+      if (args.labels !== undefined) {
+        updateParams.labels = args.labels.join(',');
+      }
+
+      if (args.state_event !== undefined) {
+        updateParams.state_event = args.state_event;
+      }
+
+      // Check if at least one field is being updated
+      if (Object.keys(updateParams).length === 0) {
+        return this.createErrorResult(
+          'Nenhum campo para atualizar. Forneça pelo menos: title, description, assignee, labels ou state_event.'
+        );
+      }
+
+      // Update issue
+      const updatedIssue = await this.api.updateIssue(projectId, issueIid, updateParams);
+
+      // Format result
+      const result = `✅ **Issue Atualizada com Sucesso**
+
+**IID:** #${updatedIssue.iid}
+**Título:** ${updatedIssue.title}
+**Status:** ${updatedIssue.state}
+**Labels:** ${updatedIssue.labels?.join(', ') || 'Nenhuma'}
+**URL:** ${updatedIssue.web_url}
+
+**Campos atualizados:** ${Object.keys(updateParams).join(', ')}`;
+
+      return this.createSuccessResult(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Error updating issue', { error: message });
       return this.createErrorResult(message);
     }
   }
@@ -487,6 +583,9 @@ export class McpToolHandlers {
 
       case 'create_gitlab_issue':
         return await this.handleCreateIssue(args as CreateIssueArgs);
+
+      case 'update_gitlab_issue':
+        return await this.handleUpdateIssue(args as UpdateIssueArgs);
 
       case 'get_gitlab_issue_template':
         return this.handleGetTemplate();

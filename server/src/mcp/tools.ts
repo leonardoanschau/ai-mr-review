@@ -66,6 +66,65 @@ export class McpToolsDefinition {
     };
   }
 
+  static updateIssueTool(): McpTool {
+    return {
+      name: 'update_gitlab_issue',
+      description:
+        '✏️ Atualiza issue existente no GitLab (título, descrição, assignee, labels, status). ' +
+        'Permite edição parcial: apenas campos fornecidos são atualizados, demais mantêm valores originais. ' +
+        'Exemplo uso: update_gitlab_issue({"issue_url": "http://gitlab.dimed.com.br/.../issues/42", "title": "[US] Novo título"}). ' +
+        'Retorna: {"iid": 42, "title": "...", "web_url": "http://..."}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          issue_url: {
+            type: 'string',
+            description:
+              'URL completa da issue (ex: http://gitlab.dimed.com.br/grupopanvel/.../issues/42). Recomendado - alternativa a project_name + issue_iid.',
+          },
+          project_name: {
+            type: 'string',
+            description:
+              'Nome do projeto (ex: "customer-job"). USE SE não fornecer issue_url. Requer issue_iid junto.',
+          },
+          issue_iid: {
+            type: 'number',
+            description:
+              'IID da issue (número #X). USE SE não fornecer issue_url. Requer project_name junto.',
+          },
+          title: {
+            type: 'string',
+            description:
+              'Novo título (opcional). Deve manter prefixo [US]/[TD]/[BUG]/[DEV] conforme tipo da issue.',
+          },
+          description: {
+            type: 'string',
+            description:
+              'Nova descrição em Markdown (opcional). Substitui descrição completa.',
+          },
+          assignee: {
+            type: 'string',
+            description:
+              'Username GitLab do novo assignee (opcional). Use username (ex: "joaom"), não nome completo.',
+          },
+          labels: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Array de strings com novas labels (opcional). Substitui labels existentes. Ex: ["Bug", "Alta prioridade"].',
+          },
+          state_event: {
+            type: 'string',
+            description:
+              'Alterar status (opcional): "close" para fechar, "reopen" para reabrir.',
+            enum: ['close', 'reopen'],
+          },
+        },
+        required: [],
+      },
+    };
+  }
+
   static getTemplateTool(): McpTool {
     return {
       name: 'get_gitlab_issue_template',
@@ -230,6 +289,7 @@ export class McpToolsDefinition {
     return [
       this.listProjectsTool(),
       this.createIssueTool(),
+      this.updateIssueTool(),
       this.getTemplateTool(),
       this.reviewMergeRequestTool(),
       this.postMergeRequestCommentsTool(),

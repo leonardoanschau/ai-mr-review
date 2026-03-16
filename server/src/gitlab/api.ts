@@ -116,6 +116,14 @@ interface CreateIssueParams {
   }[];
 }
 
+interface UpdateIssueParams {
+  title?: string;
+  description?: string;
+  assignee_ids?: number[];
+  labels?: string[];
+  state_event?: 'close' | 'reopen';
+}
+
 export class GitLabApiClient {
   private static readonly REQUEST_TIMEOUT = 30000;
   private static readonly MAX_PROJECTS_PER_PAGE = 100;
@@ -256,6 +264,28 @@ export class GitLabApiClient {
     );
 
     logger.info(`Issue created: #${issue.iid} - ${issue.web_url}`);
+    return issue;
+  }
+
+  /**
+   * Update an existing issue
+   */
+  async updateIssue(
+    projectId: number,
+    issueIid: number,
+    params: UpdateIssueParams
+  ): Promise<GitLabIssue> {
+    logger.info(`Updating issue #${issueIid} in project ${projectId}`);
+    
+    const issue = await this.makeRequest<GitLabIssue>(
+      `/projects/${projectId}/issues/${issueIid}`,
+      {
+        method: 'PUT',
+        body: params,
+      }
+    );
+
+    logger.info(`Issue updated: #${issue.iid} - ${issue.title}`);
     return issue;
   }
 

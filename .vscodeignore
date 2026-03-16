@@ -28,13 +28,13 @@ scripts/**
 
 # Server source files (only include compiled dist)
 server/src/**
-server/node_modules/**
 server/package-lock.json
 server/tsconfig.json
 
-# Include compiled server
+# Include compiled server and dependencies
 !server/dist/**
 !server/package.json
+!server/node_modules/**
 
 # Build artifacts
 build/**

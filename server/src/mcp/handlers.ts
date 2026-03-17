@@ -23,10 +23,17 @@ interface CreateIssueArgs {
   labels?: string[];
 }
 
+interface GetIssueArgs {
+  issue_url?: string;
+  project_name?: string;
+  issue_iid?: number;
+}
+
 interface UpdateIssueArgs {
   issue_url?: string;
   project_name?: string;
   issue_iid?: number;
+  confirmed: boolean;
   title?: string;
   description?: string;
   assignee?: string;
@@ -55,6 +62,7 @@ interface PostMergeRequestCommentsArgs {
 interface CreateDevTasksArgs {
   parent_issue_url: string;
   default_project: string;
+  confirmed: boolean;
   auto_suggest?: boolean;
   assignee?: string;
 }
@@ -170,8 +178,83 @@ export class McpToolHandlers {
     }
   }
 
+  async handleGetIssue(args: GetIssueArgs): Promise<McpToolResult> {
+    try {
+      const config = ConfigManager.getConfig();
+      const groupPath = config.defaultGroup;
+
+      if (!groupPath) {
+        return this.createErrorResult(
+          'GITLAB_DEFAULT_GROUP não configurado nas variáveis de ambiente'
+        );
+      }
+
+      let issue: any;
+      let project: any;
+
+      // Parse URL if provided, otherwise use project_name + issue_iid
+      if (args.issue_url) {
+        const result = await this.api.getIssueByUrl(args.issue_url);
+        issue = result.issue;
+        project = result.project;
+      } else if (args.project_name && args.issue_iid) {
+        project = await this.projectService.findProjectByName(
+          args.project_name,
+          groupPath
+        );
+        issue = await this.api.getIssue(project.id, args.issue_iid);
+      } else {
+        return this.createErrorResult(
+          'Forneça issue_url OU (project_name + issue_iid)'
+        );
+      }
+
+      // Format assignees
+      const assignees = issue.assignees?.map((a: any) => a.username).join(', ') || 'Nenhum';
+
+      // Format dates
+      const createdAt = new Date(issue.created_at).toLocaleString('pt-BR');
+      const updatedAt = new Date(issue.updated_at).toLocaleString('pt-BR');
+
+      // Format result
+      const result = `📋 **Issue Encontrada**
+
+**IID:** #${issue.iid}
+**Título:** ${issue.title}
+**Status:** ${issue.state}
+**Projeto:** ${project.path_with_namespace}
+**Labels:** ${issue.labels?.join(', ') || 'Nenhuma'}
+**Assignees:** ${assignees}
+**Criada em:** ${createdAt}
+**Atualizada em:** ${updatedAt}
+**URL:** ${issue.web_url}
+
+---
+
+**Descrição:**
+
+${issue.description || '*Sem descrição*'}`;
+
+      return this.createSuccessResult(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Error getting issue', { error: message });
+      return this.createErrorResult(message);
+    }
+  }
+
   async handleUpdateIssue(args: UpdateIssueArgs): Promise<McpToolResult> {
     try {
+      // Check if confirmed
+      if (!args.confirmed) {
+        return this.createErrorResult(
+          '⚠️ OPERAÇÃO REJEITADA: Parâmetro "confirmed" deve ser true. ' +
+          'WORKFLOW OBRIGATÓRIO: 1) Chamar get_gitlab_issue para ver os dados, ' +
+          '2) Mostrar informações ao usuário, 3) Pedir confirmação explícita, ' +
+          '4) Executar novamente com confirmed=true.'
+        );
+      }
+
       const config = ConfigManager.getConfig();
       const groupPath = config.defaultGroup;
 
@@ -464,6 +547,16 @@ export class McpToolHandlers {
 
   async handleCreateDevTasks(args: CreateDevTasksArgs): Promise<McpToolResult> {
     try {
+      // Check if confirmed
+      if (!args.confirmed) {
+        return this.createErrorResult(
+          '⚠️ OPERAÇÃO REJEITADA: Parâmetro "confirmed" deve ser true. ' +
+          'WORKFLOW OBRIGATÓRIO: 1) Chamar get_gitlab_issue para ver a issue pai e tarefas, ' +
+          '2) Mostrar informações ao usuário, 3) Pedir confirmação explícita, ' +
+          '4) Executar novamente com confirmed=true.'
+        );
+      }
+
       const config = ConfigManager.getConfig();
       const autoSuggest = args.auto_suggest !== false; // default true
 
@@ -595,6 +688,9 @@ export class McpToolHandlers {
 
       case 'create_gitlab_issue':
         return await this.handleCreateIssue(args as CreateIssueArgs);
+
+      case 'get_gitlab_issue':
+        return await this.handleGetIssue(args as GetIssueArgs);
 
       case 'update_gitlab_issue':
         return await this.handleUpdateIssue(args as UpdateIssueArgs);

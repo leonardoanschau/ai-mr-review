@@ -1,8 +1,14 @@
 # 🚀 GitlabMCP-AnschauTI
 
-**Version 1.0.0** | MIT License
+**Version 1.1.0** | MIT License
 
-GitLab productivity tools integrated with GitHub Copilot. Create issues, list projects, and use templates - all with natural language!
+GitLab productivity tools integrated with GitHub Copilot. Automate issue management, code review, and task decomposition - all with natural language!
+
+## 📋 Requirements
+
+- ✅ **Node.js** (required) - Used by VS Code's built-in runtime
+- ✅ **GitLab Personal Access Token** with scopes: `api`, `read_user`, `write_repository`
+- ✅ **GitHub Copilot** (recommended for AI-powered workflows)
 
 ## 🖥️ Cross-Platform Support
 
@@ -10,133 +16,135 @@ GitLab productivity tools integrated with GitHub Copilot. Create issues, list pr
 ✅ **Windows** (x64 & ARM64)  
 ✅ **Linux** (x64 & ARM64)
 
-*Works out-of-the-box on all platforms - no Python, no binaries, just JavaScript!*
+*Pure TypeScript - works everywhere VS Code runs!*
 
-## ⚡ Architecture
+## 🔧 Available Tools
 
-Built with **TypeScript** for maximum compatibility:
-- 🌍 **Universal**: One codebase runs everywhere
-- 🚀 **Fast startup**: No binary loading overhead  
-- 🔧 **Easy debugging**: Native VS Code support
-- 📦 **Small footprint**: ~50KB vs ~30MB per binary
-- 🔐 **Secure**: Uses VS Code's built-in Node.js
+This extension provides **7 tools** that work seamlessly with GitHub Copilot:
 
-## ✨ Features
+### 📋 Issue Management
 
-- 🎯 **GitLab Issue Creation** - Use natural language with Copilot
-- 📋 **Complete Templates** - User Stories, Bugs, Technical Debt
-- 🔍 **Project Search** - List all projects recursively
-- 📡 **API Contracts** - Request/Response templates included
-- 🤖 **Copilot Integration** - AI generates content automatically
-- 🔐 **Secure** - Tokens stored encrypted in VS Code Secret Storage
+**1. list_gitlab_projects**  
+Lists all projects in your CRM group. Shows name, ID, and full path. Use this first before creating any issue.
 
----
+**2. create_gitlab_issue**  
+Creates a new GitLab issue. Requires project name, title with prefix ([US], [TD], or [BUG]), and Markdown description. Optional assignee and labels.
 
-## 🎬 Quick Start
+**3. update_gitlab_issue**  
+Edits an existing issue. Update title, description, assignee, labels, or status (close/reopen). Only modifies the fields you specify.
 
-### 1️⃣ Installation
+**4. get_gitlab_issue_template**  
+Returns the standard issue template with sections: Description, Acceptance Criteria, Definition of Done, and Notes.
 
-**From VS Code Marketplace:**
-```
-Extensions → Search "GitLab MCP" → Install
-```
+**5. create_dev_tasks_from_issue**  
+Automates creation of [DEV] issues from User Stories or Technical Debt. Reads the "## ✅ Tarefas" section, creates one [DEV] issue per checkbox, and links them to the parent issue. **Requires specifying target project.**
 
-**From VSIX:**
-```bash
-code --install-extension gitlab-mcp-1.0.0.vsix
-```
+### 🔍 Code Review
 
-### 2️⃣ Configuration
+**6. review_gitlab_merge_request**  
+Analyzes a Merge Request using 19 code review rules. Returns a complete report with metadata, quality checklist, and only added lines (+). Marks commentable lines with 💬.
 
-On first run, a wizard will open automatically:
-
-1. **GitLab URL**: Your GitLab API URL (e.g., `https://gitlab.com/api/v4`)
-2. **GitLab Token**: Personal access token ([how to get](#-get-gitlab-token))
-3. **Default Group**: Optional (e.g., `mycompany/myteam`)
-4. **Default Assignee**: Optional (your username)
-
-### 3️⃣ Usage with Copilot
-
-Open **Copilot Chat** (`Ctrl+Shift+I` / `Cmd+Shift+I`):
-
-```
-@workspace create a user story in project MyApp about implementing Redis cache
-```
-
-```
-@workspace list GitLab projects
-```
-
-```
-@workspace show GitLab issue template
-```
-
-**The AI will:**
-1. List available projects
-2. You choose the project
-3. AI generates title and description
-4. Creates the issue automatically
+**7. post_merge_request_comments**  
+Posts inline comments on specific MR lines. Use after `review_gitlab_merge_request`. **Important:** Only works on added lines (marked with 💬), not context lines.
 
 ---
 
-## 📋 Issue Template
+## 🎬 Getting Started
 
-All issues follow a comprehensive template with 9 sections:
+### Installation
 
-- 🎯 **Objective** - What and why
-- 📌 **Context** - Current situation
-- 📡 **API Contracts** - Request/Response (if applicable)
-- 🔗 **Dependencies** - External services, prerequisites
-- ✅ **Tasks** - Technical checklist
-- ⚡ **Impacts** - Breaking changes, migrations
-- ⚠️ **Observations** - Risks and considerations
-- 📊 **Success Metrics** - SLAs, monitoring
-- ✔️ **Acceptance Criteria** - How to validate
+Install from the **VS Code Marketplace**:
 
-> **Note:** AI evaluates context and includes only relevant sections.
+1. Open VS Code
+2. Go to Extensions (`Ctrl+Shift+X` / `Cmd+Shift+X`)
+3. Search for **"GitlabMCP-AnschauTI"**
+4. Click **Install**
 
----
+### Configuration
 
-## 🔐 Get GitLab Token
-
-1. Go to: Your GitLab → Settings → Access Tokens
-2. Click **"Add new token"**
-3. Configure:
-   - **Name**: `VS Code MCP`
-   - **Scopes**: `api`, `read_user`, `write_repository`
-   - **Expiration**: 1 year (recommended)
-4. **Copy the token** (shown only once!)
-5. Paste in the extension wizard
-
----
-
-## ⚙️ Manual Configuration
+On first use, configure your GitLab credentials:
 
 **Command Palette** (`Cmd+Shift+P` / `Ctrl+Shift+P`):
 ```
 GitLab MCP: Configure GitLab
 ```
 
-**Or edit settings manually:**
+You'll need to provide:
+1. **GitLab API URL** - Your GitLab API endpoint (e.g., `http://gitlab.company.com/api/v4`)
+2. **Personal Access Token** - Token with `api`, `read_user`, `write_repository` scopes
+3. **Default Group** (optional) - Your team's namespace (e.g., `company/team`)
+4. **Default Assignee** (optional) - Your GitLab username
+
+### Usage with GitHub Copilot
+
+Open **Copilot Chat** and start using natural language:
+
+**Example 1: Create an issue**
+```
+@workspace list gitlab projects
+@workspace create a user story in project authorization-service about improving audit logs
+```
+
+**Example 2: Review a merge request**
+```
+@workspace review merge request !42 from project customer-service
+```
+
+**Example 3: Create dev tasks**
+```
+@workspace create dev tasks from issue #1038 in project authorization-service
+```
+
+The AI will guide you through the workflow, showing options and generating content automatically.
+
+---
+
+## 🔐 Getting Your GitLab Token
+
+1. Go to GitLab → **Settings** → **Access Tokens**
+2. Click **"Add new token"**
+3. Configure:
+   - **Name**: `VS Code MCP`
+   - **Scopes**: Select `api`, `read_user`, `write_repository`
+   - **Expiration**: Set to 1 year (recommended)
+4. Click **Create personal access token**
+5. **Copy the token** (shown only once!)
+6. Paste it in the extension configuration wizard
+
+---
+
+## ⚙️ Manual Configuration
+
+If you need to update your settings later:
+
+**Via Command Palette:**
+```
+GitLab MCP: Configure GitLab
+```
+
+**Or edit VS Code settings:**
 ```json
 {
-  "gitlabmcp.gitlab.url": "https://gitlab.com/api/v4",
-  "gitlabmcp.gitlab.defaultGroup": "mycompany/myteam",
+  "gitlabmcp.gitlab.url": "http://gitlab.company.com/api/v4",
+  "gitlabmcp.gitlab.defaultGroup": "company/team",
   "gitlabmcp.gitlab.defaultAssignee": "your-username"
 }
 ```
 
-Token via Command Palette: `GitLab MCP: Configure GitLab`
+**Update token via Command Palette:**
+```
+GitLab MCP: Configure GitLab
+```
 
 ---
 
-## 🛠️ Commands
+## 🛠️ Available Commands
 
 | Command | Description |
 |---------|-------------|
 | `GitLab MCP: Configure GitLab` | Open configuration wizard |
-| `GitLab MCP: Create GitLab Issue` | Usage tips with Copilot |
-| `GitLab MCP: List GitLab Projects` | Usage tips for project search |
+| `GitLab MCP: Create GitLab Issue` | Show usage tips with Copilot |
+| `GitLab MCP: List GitLab Projects` | Show project search tips |
 | `GitLab MCP: Show Issue Template` | Display complete template |
 
 ---
@@ -145,62 +153,62 @@ Token via Command Palette: `GitLab MCP: Configure GitLab`
 
 ### ❌ Server doesn't start
 
-1. Check **Output Channel**: `View → Output → GitLab MCP Server`
-2. Verify Python is installed: `python3 --version`
-3. Reconfigure: `GitLab MCP: Configure GitLab`
+1. Check **Output Channel**: `View → Output → GitlabMCP-AnschauTI`
+2. Verify Node.js is accessible to VS Code
+3. Restart VS Code
+4. Reconfigure: `GitLab MCP: Configure GitLab`
 
 ### ❌ Copilot doesn't recognize tools
 
-1. Restart VS Code
-2. Check server is running (status bar: ✔️ GitLab MCP)
-3. View logs in Output Channel
+1. Restart VS Code completely
+2. Check server status in status bar (should show ✔️ GitlabMCP-AnschauTI)
+3. Open Output Channel to view logs: `View → Output → GitlabMCP-AnschauTI`
 
-### ❌ Project not found
+### ❌ "Project not found" error
 
-Use exact name from list:
+Use the exact project name from the list:
 ```
 @workspace list GitLab projects
 ```
-Copy exact project name from returned list.
+Copy the **exact name** shown in the returned list (case-sensitive).
 
----
+### ❌ Cannot create [DEV] tasks
 
-## 📦 Building from Source
-
-```bash
-# Clone repository
-git clone <your-repo>
-cd gitlab-mcp
-
-# Install dependencies
-npm install
-pip install -r requirements.txt
-
-# Compile TypeScript
-npm run compile
-
-# Generate .vsix
-npm run package
-
-# Install locally
-code --install-extension gitlab-mcp-1.0.0.vsix
+Make sure your issue has a section named `## ✅ Tarefas` or `## Tarefas` with checkboxes:
+```markdown
+## ✅ Tarefas
+- [ ] Task 1
+- [ ] Task 2
 ```
 
+You must also specify the target project when creating tasks.
+
 ---
 
-## 📝 Changelog
+## 📝 Issue Template Structure
 
-See CHANGELOG.md for version history.
+All issues follow a comprehensive template with these sections:
 
-## 🤝 Contributing
+- 🎯 **Objective** - What needs to be done and why
+- 📌 **Context** - Current situation and background
+- 📡 **API Contracts** - Request/Response (if applicable)
+- 🔗 **Dependencies** - External services, prerequisites
+- ✅ **Tasks** - Technical checklist (used by create_dev_tasks_from_issue)
+- ⚡ **Impacts** - Breaking changes, migrations
+- ⚠️ **Observations** - Risks and considerations
+- 📊 **Success Metrics** - SLAs, monitoring
+- ✔️ **Acceptance Criteria** - How to validate completion
 
-Contributions welcome! Open an issue or submit a pull request.
+> **Note:** GitHub Copilot automatically includes only relevant sections based on context.
+
+---
 
 ## 📄 License
 
-MIT License
+MIT License - See LICENSE file for details.
 
 ---
 
-**Questions?** Open an issue on the repository! 🚀
+**Made with ❤️ for GitLab + GitHub Copilot users**
 
+*Questions or issues? Open an issue on the repository!* 🚀

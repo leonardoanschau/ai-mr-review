@@ -33,7 +33,6 @@ interface UpdateIssueArgs {
   issue_url?: string;
   project_name?: string;
   issue_iid?: number;
-  confirmed: boolean;
   title?: string;
   description?: string;
   assignee?: string;
@@ -62,7 +61,6 @@ interface PostMergeRequestCommentsArgs {
 interface CreateDevTasksArgs {
   parent_issue_url: string;
   default_project: string;
-  confirmed: boolean;
   auto_suggest?: boolean;
   assignee?: string;
 }
@@ -245,16 +243,6 @@ ${issue.description || '*Sem descrição*'}`;
 
   async handleUpdateIssue(args: UpdateIssueArgs): Promise<McpToolResult> {
     try {
-      // Check if confirmed
-      if (!args.confirmed) {
-        return this.createErrorResult(
-          '⚠️ OPERAÇÃO REJEITADA: Parâmetro "confirmed" deve ser true. ' +
-          'WORKFLOW OBRIGATÓRIO: 1) Chamar get_gitlab_issue para ver os dados, ' +
-          '2) Mostrar informações ao usuário, 3) Pedir confirmação explícita, ' +
-          '4) Executar novamente com confirmed=true.'
-        );
-      }
-
       const config = ConfigManager.getConfig();
       const groupPath = config.defaultGroup;
 
@@ -547,16 +535,6 @@ ${issue.description || '*Sem descrição*'}`;
 
   async handleCreateDevTasks(args: CreateDevTasksArgs): Promise<McpToolResult> {
     try {
-      // Check if confirmed
-      if (!args.confirmed) {
-        return this.createErrorResult(
-          '⚠️ OPERAÇÃO REJEITADA: Parâmetro "confirmed" deve ser true. ' +
-          'WORKFLOW OBRIGATÓRIO: 1) Chamar get_gitlab_issue para ver a issue pai e tarefas, ' +
-          '2) Mostrar informações ao usuário, 3) Pedir confirmação explícita, ' +
-          '4) Executar novamente com confirmed=true.'
-        );
-      }
-
       const config = ConfigManager.getConfig();
       const autoSuggest = args.auto_suggest !== false; // default true
 

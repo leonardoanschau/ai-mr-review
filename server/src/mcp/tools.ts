@@ -103,12 +103,13 @@ export class McpToolsDefinition {
     return {
       name: 'update_gitlab_issue',
       description:
+        '⚠️⚠️⚠️ **OPERAÇÃO DESTRUTIVA** ⚠️⚠️⚠️\n\n' +
         '✏️ Atualiza issue existente no GitLab (título, descrição, assignee, labels, status). ' +
-        '⚠️ **CRITICAL**: SEMPRE chamar get_gitlab_issue ANTES e SEMPRE requerer confirmed=true do usuário. ' +
-        '⚠️ **WORKFLOW OBRIGATÓRIO**: 1) get_gitlab_issue, 2) Mostrar info ao usuário, 3) Pedir confirmação, 4) Executar com confirmed=true. ' +
+        '**ANTES DE EXECUTAR**: 1) Chamar get_gitlab_issue para ver dados atuais, ' +
+        '2) MOSTRAR os dados ao usuário, 3) PERGUNTAR "Confirma atualizar a issue #X - [Título]? (sim/não)", ' +
+        '4) AGUARDAR resposta explícita do usuário, 5) Se "sim" → executar, se "não" → cancelar. ' +
         'Permite edição parcial: apenas campos fornecidos são atualizados, demais mantêm valores originais. ' +
-        'Exemplo uso: update_gitlab_issue({"issue_url": "http://gitlab.dimed.com.br/.../issues/42", "title": "[US] Novo título", "confirmed": true}). ' +
-        'Retorna: {"iid": 42, "title": "...", "web_url": "http://..."}',
+        'Exemplo: update_gitlab_issue({"issue_url": "http://gitlab.dimed.com.br/.../issues/42", "title": "[US] Novo título"}). ',
       inputSchema: {
         type: 'object',
         properties: {
@@ -126,11 +127,6 @@ export class McpToolsDefinition {
             type: 'number',
             description:
               'IID da issue (número #X). USE SE não fornecer issue_url. Requer project_name junto.',
-          },
-          confirmed: {
-            type: 'boolean',
-            description:
-              '⚠️ **OBRIGATÓRIO**: DEVE ser true para confirmar a execução. O usuário DEVE confirmar explicitamente após ver os dados da issue via get_gitlab_issue. Sem confirmed=true, a operação será rejeitada com erro.',
           },
           title: {
             type: 'string',
@@ -160,7 +156,7 @@ export class McpToolsDefinition {
             enum: ['close', 'reopen'],
           },
         },
-        required: ['confirmed'],
+        required: [],
       },
     };
   }
@@ -291,14 +287,17 @@ export class McpToolsDefinition {
     return {
       name: 'create_dev_tasks_from_issue',
       description:
+        '⚠️⚠️⚠️ **OPERAÇÃO DESTRUTIVA - CRIA MÚLTIPLAS ISSUES** ⚠️⚠️⚠️\n\n' +
         '🔨 Cria automaticamente issues [DEV] derivadas de uma US/TD/BUG. ' +
-        '⚠️ **CRITICAL**: SEMPRE chamar get_gitlab_issue ANTES e SEMPRE requerer confirmed=true do usuário. ' +
-        '⚠️ **WORKFLOW OBRIGATÓRIO**: 1) get_gitlab_issue, 2) Mostrar info e tarefas ao usuário, 3) Pedir confirmação, 4) Executar com confirmed=true. ' +
+        '**ANTES DE EXECUTAR**: 1) Chamar get_gitlab_issue para ver issue pai e tarefas, ' +
+        '2) MOSTRAR ao usuário quantas issues serão criadas e em qual projeto, ' +
+        '3) PERGUNTAR "Confirma criar X issues [DEV] no projeto Y? (sim/não)", ' +
+        '4) AGUARDAR resposta explícita do usuário, 5) Se "sim" → executar, se "não" → cancelar. ' +
         'Extrai tarefas APENAS da seção "## ✅ Tarefas" ou "## Tarefas" (IGNORA checkboxes de "Critérios de Aceite" ou outras seções). ' +
         'Se não houver seção de Tarefas e auto_suggest=true, sugere decomposição baseada no conteúdo. ' +
         '⚠️ **OBRIGATÓRIO especificar default_project** - não cria automaticamente no projeto pai. ' +
         'Para criar tarefas em projetos diferentes, execute a tool múltiplas vezes filtrando manualmente. ' +
-        'Exemplo uso: create_dev_tasks_from_issue({parent_issue_url: "http://gitlab.../issues/1038", default_project: "customer-service", confirmed: true}). ' +
+        'Exemplo: create_dev_tasks_from_issue({parent_issue_url: "http://gitlab.../issues/1038", default_project: "customer-service"}). ' +
         'Workflow: 1) Parser tarefas da seção dedicada, 2) Criar issues [DEV] no projeto especificado, 3) Linkar com issue pai.',
       inputSchema: {
         type: 'object',
@@ -313,11 +312,6 @@ export class McpToolsDefinition {
             description:
               '⚠️ Nome do projeto onde as issues [DEV] serão criadas. **OBRIGATÓRIO**. Use list_gitlab_projects() para ver opções. Ex: "customer-service".',
           },
-          confirmed: {
-            type: 'boolean',
-            description:
-              '⚠️ **OBRIGATÓRIO**: DEVE ser true para confirmar a execução. O usuário DEVE confirmar explicitamente após ver os dados da issue pai e tarefas que serão criadas via get_gitlab_issue. Sem confirmed=true, a operação será rejeitada com erro.',
-          },
           auto_suggest: {
             type: 'boolean',
             description:
@@ -329,7 +323,7 @@ export class McpToolsDefinition {
               'Username GitLab para assignee das issues [DEV] criadas. Se omitido, usa assignee padrão configurado.',
           },
         },
-        required: ['parent_issue_url', 'default_project', 'confirmed'],
+        required: ['parent_issue_url', 'default_project'],
       },
     };
   }

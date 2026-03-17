@@ -183,12 +183,14 @@ export class McpToolHandlers {
 
       let projectId: number;
       let issueIid: number;
+      let currentIssue: any;
 
       // Parse URL if provided, otherwise use project_name + issue_iid
       if (args.issue_url) {
         const { project, issue } = await this.api.getIssueByUrl(args.issue_url);
         projectId = project.id;
         issueIid = issue.iid;
+        currentIssue = issue;
       } else if (args.project_name && args.issue_iid) {
         const project = await this.projectService.findProjectByName(
           args.project_name,
@@ -196,11 +198,15 @@ export class McpToolHandlers {
         );
         projectId = project.id;
         issueIid = args.issue_iid;
+        currentIssue = await this.api.getIssue(projectId, issueIid);
       } else {
         return this.createErrorResult(
           'Forneça issue_url OU (project_name + issue_iid)'
         );
       }
+
+      // Show confirmation with issue info
+      logger.info(`[CONFIRMAÇÃO] Atualizando Issue #${currentIssue.iid} - ${currentIssue.title}`);
 
       // Build update params (only include fields that were provided)
       const updateParams: any = {};
@@ -237,7 +243,13 @@ export class McpToolHandlers {
       const updatedIssue = await this.api.updateIssue(projectId, issueIid, updateParams);
 
       // Format result
-      const result = `✅ **Issue Atualizada com Sucesso**
+      const result = `📋 **[CONFIRMAÇÃO] Issue identificada:**
+**#${currentIssue.iid}** - ${currentIssue.title}
+**URL:** ${currentIssue.web_url}
+
+---
+
+✅ **Issue Atualizada com Sucesso**
 
 **IID:** #${updatedIssue.iid}
 **Título:** ${updatedIssue.title}
@@ -461,6 +473,9 @@ export class McpToolHandlers {
         args.parent_issue_url
       );
 
+      // Show confirmation with parent issue info
+      logger.info(`[CONFIRMAÇÃO] Issue Pai identificada: #${parentIssue.iid} - ${parentIssue.title}`);
+
       // 2. Extrair tarefas da descrição
       let tasks = parseTasksFromDescription(parentIssue.description);
 
@@ -533,11 +548,22 @@ export class McpToolHandlers {
       }
 
       // Formatar resultado
-      let resultText = `✅ **${createdIssues.length} de ${tasks.length} issues [DEV] criadas com sucesso!**\n\n`;
-      resultText += `📌 **Issue Pai:** ${parentIssue.title} (#${parentIssue.iid})\n`;
-      resultText += `🔗 ${parentIssue.web_url}\n\n`;
-      resultText += `---\n\n`;
-      resultText += `📋 **Issues [DEV] Criadas:**\n\n`;
+      let resultText = `📋 **[CONFIRMAÇÃO] Issue Pai identificada:**
+**#${parentIssue.iid}** - ${parentIssue.title}
+**URL:** ${parentIssue.web_url}
+
+---
+
+✅ **${createdIssues.length} de ${tasks.length} issues [DEV] criadas com sucesso!**
+
+📌 **Issue Pai:** ${parentIssue.title} (#${parentIssue.iid})
+🔗 ${parentIssue.web_url}
+
+---
+
+📋 **Issues [DEV] Criadas:**
+
+`;
 
       createdIssues.forEach((created, index) => {
         resultText += `**${index + 1}. [DEV] ${created.task}**\n`;

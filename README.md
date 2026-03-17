@@ -6,9 +6,10 @@ GitLab productivity tools integrated with GitHub Copilot. Automate issue managem
 
 ## 📋 Requirements
 
-- ✅ **Node.js** (required) - Used by VS Code's built-in runtime
 - ✅ **GitLab Personal Access Token** with scopes: `api`, `read_user`, `write_repository`
 - ✅ **GitHub Copilot** (recommended for AI-powered workflows)
+
+**No additional runtime needed** - The extension uses VS Code's built-in Node.js runtime.
 
 ## 🖥️ Cross-Platform Support
 

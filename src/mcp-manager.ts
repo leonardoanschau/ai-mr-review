@@ -106,7 +106,7 @@ export class MCPManager {
             
             mcpConfig.servers = mcpConfig.servers || {};
             mcpConfig.servers['GitlabMCP-AnschauTI'] = {
-                command: 'node',  // Use Node.js from VS Code
+                command: process.execPath,  // Use Node.js runtime from VS Code
                 args: [serverScriptPath],
                 env: env,
                 type: 'stdio'

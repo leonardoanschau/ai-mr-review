@@ -1,6 +1,6 @@
 # 🚀 GitlabMCP-AnschauTI
 
-**Version 1.1.0** | MIT License
+**Version 1.3.0** | MIT License
 
 GitLab productivity tools integrated with GitHub Copilot. Automate issue management, code review, and task decomposition - all with natural language!
 
@@ -21,7 +21,7 @@ GitLab productivity tools integrated with GitHub Copilot. Automate issue managem
 
 ## 🔧 Available Tools
 
-This extension provides **7 tools** that work seamlessly with GitHub Copilot:
+This extension provides **8 tools** that work seamlessly with GitHub Copilot:
 
 ### 📋 Issue Management
 
@@ -31,21 +31,24 @@ Lists all projects in your CRM group. Shows name, ID, and full path. Use this fi
 **2. create_gitlab_issue**  
 Creates a new GitLab issue. Requires project name, title with prefix ([US], [TD], or [BUG]), and Markdown description. Optional assignee and labels.
 
-**3. update_gitlab_issue**  
-Edits an existing issue. Update title, description, assignee, labels, or status (close/reopen). Only modifies the fields you specify.
+**3. get_gitlab_issue** ⭐ NEW in v1.3.0  
+Fetches complete information about an issue without making any changes (safe read-only operation). Shows IID, title, description, assignees, labels, status, dates, and URL. **Always use this before update_gitlab_issue to confirm you're operating on the correct issue.**
 
-**4. get_gitlab_issue_template**  
+**4. update_gitlab_issue** ⚠️ DESTRUCTIVE  
+Edits an existing issue. Update title, description, assignee, labels, or status (close/reopen). Only modifies the fields you specify. **Safety workflow:** Get issue info first → Show to user → Ask confirmation → Execute.
+
+**5. get_gitlab_issue_template**  
 Returns the standard issue template with sections: Description, Acceptance Criteria, Definition of Done, and Notes.
 
-**5. create_dev_tasks_from_issue**  
-Automates creation of [DEV] issues from User Stories or Technical Debt. Reads the "## ✅ Tarefas" section, creates one [DEV] issue per checkbox, and links them to the parent issue. **Requires specifying target project.**
+**6. create_dev_tasks_from_issue** ⚠️ DESTRUCTIVE  
+Automates creation of [DEV] issues from User Stories or Technical Debt. Reads the "## ✅ Tarefas" section, creates one [DEV] issue per checkbox, and links them to the parent issue. **Requires specifying target project.** **Safety workflow:** Get issue info first → Show tasks to create → Ask confirmation → Execute.
 
 ### 🔍 Code Review
 
-**6. review_gitlab_merge_request**  
+**7. review_gitlab_merge_request**  
 Analyzes a Merge Request using 19 code review rules. Returns a complete report with metadata, quality checklist, and only added lines (+). Marks commentable lines with 💬.
 
-**7. post_merge_request_comments**  
+**8. post_merge_request_comments**  
 Posts inline comments on specific MR lines. Use after `review_gitlab_merge_request`. **Important:** Only works on added lines (marked with 💬), not context lines.
 
 ---

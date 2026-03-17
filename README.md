@@ -1,6 +1,6 @@
 # 🚀 GitlabMCP-AnschauTI
 
-**Version 1.3.0** | MIT License
+**Version 1.3.1** | MIT License
 
 GitLab productivity tools integrated with GitHub Copilot. Automate issue management, code review, and task decomposition - all with natural language!
 

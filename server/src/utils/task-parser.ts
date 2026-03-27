@@ -72,6 +72,95 @@ export function parseTasksFromDescription(description: string): ParsedTask[] {
 }
 
 /**
+ * Analisa o conteúdo completo de uma issue e retorna um contexto estruturado
+ * para o LLM analisar e sugerir tarefas [DEV].
+ *
+ * NÃO depende da presença de uma seção "## Tarefas" — lê TODAS as seções
+ * e coleta qualquer checkbox encontrado, apresentando ao LLM para que ele
+ * possa sugerir a decomposição adequada.
+ */
+export function analyzeIssueForTaskSuggestion(description: string, title: string): string {
+  const lines: string[] = [];
+
+  lines.push(`## 📋 Análise da Issue: ${title}`);
+  lines.push('');
+  lines.push('> **Para o LLM:** Analise o conteúdo abaixo e sugira uma lista de tarefas [DEV] adequadas.');
+  lines.push('> Para cada tarefa aprovada pelo usuário, chame `create_dev_tasks_from_issue` com `task_title` e `default_project`.');
+  lines.push('');
+
+  if (!description || description.trim().length === 0) {
+    lines.push('*Descrição da issue está vazia.*');
+    return lines.join('\n');
+  }
+
+  // Extrai seções do Markdown (## headings)
+  const sectionRegex = /^(##\s+.+)$/gm;
+  const sectionMatches = [...description.matchAll(sectionRegex)];
+
+  if (sectionMatches.length === 0) {
+    // Sem seções: retorna o conteúdo completo
+    lines.push('### Conteúdo da Issue');
+    lines.push('');
+    lines.push(description.trim());
+  } else {
+    // Com seções: extrai cada uma com seu conteúdo
+    for (let i = 0; i < sectionMatches.length; i++) {
+      const match = sectionMatches[i];
+      const sectionStart = match.index! + match[0].length;
+      const sectionEnd = i + 1 < sectionMatches.length
+        ? sectionMatches[i + 1].index!
+        : description.length;
+
+      const sectionTitle = match[1].trim();
+      const sectionContent = description.substring(sectionStart, sectionEnd).trim();
+
+      lines.push(sectionTitle);
+      lines.push('');
+      if (sectionContent) {
+        lines.push(sectionContent);
+      } else {
+        lines.push('*Seção vazia.*');
+      }
+      lines.push('');
+    }
+  }
+
+  // Coleta TODOS os checkboxes encontrados em qualquer parte da descrição
+  const checkboxRegex = /^[\s]*-\s*\[([ x])\]\s+(.+)$/gim;
+  const allCheckboxes: string[] = [];
+  let cbMatch: RegExpExecArray | null;
+
+  while ((cbMatch = checkboxRegex.exec(description)) !== null) {
+    const checked = cbMatch[1] === 'x' ? '✅' : '⬜';
+    allCheckboxes.push(`${checked} ${cbMatch[2].trim()}`);
+  }
+
+  if (allCheckboxes.length > 0) {
+    lines.push('---');
+    lines.push('');
+    lines.push('### 🔍 Checkboxes encontrados (em qualquer seção)');
+    lines.push('');
+    lines.push('*Estes podem ser candidatos a tarefas [DEV] ou critérios de aceite — o LLM deve avaliar:*');
+    lines.push('');
+    for (const cb of allCheckboxes) {
+      lines.push(`- ${cb}`);
+    }
+    lines.push('');
+  }
+
+  lines.push('---');
+  lines.push('');
+  lines.push('### 💡 Próximos Passos');
+  lines.push('');
+  lines.push('1. Com base no conteúdo acima, **sugira as tarefas [DEV]** que fazem sentido para implementar esta issue.');
+  lines.push('2. Para cada tarefa sugerida, **pergunte ao usuário em qual projeto deve ser criada** (use `list_gitlab_projects` se necessário).');
+  lines.push('3. **Aguarde confirmação** do usuário para cada tarefa antes de criá-la.');
+  lines.push('4. Chame `create_dev_tasks_from_issue` com `task_title` + `default_project` para criar **uma tarefa por vez**.');
+
+  return lines.join('\n');
+}
+
+/**
  * Gera tarefas sugeridas quando não há tarefas explícitas na descrição
  * Analisa o conteúdo e sugere decomposição padrão
  */

@@ -13,7 +13,7 @@ import { CodeReviewChecklist } from '../templates/code-review-checklist.js';
 import { ConfigManager } from '../utils/config.js';
 import { logger } from '../utils/logger.js';
 import { BusinessContextExtractor } from '../utils/business-context.js';
-import { parseTasksFromDescription, suggestTasksFromDescription } from '../utils/task-parser.js';
+import { parseTasksFromDescription, analyzeIssueForTaskSuggestion } from '../utils/task-parser.js';
 
 interface CreateIssueArgs {
   project_name: string;
@@ -60,9 +60,11 @@ interface PostMergeRequestCommentsArgs {
 
 interface CreateDevTasksArgs {
   parent_issue_url: string;
-  default_project: string;
+  default_project?: string;  // required in create mode (when task_title is set), ignored in preview mode
+  task_title?: string;
   auto_suggest?: boolean;
   assignee?: string;
+  labels?: string[];
 }
 
 export class McpToolHandlers {
@@ -123,6 +125,14 @@ export class McpToolHandlers {
 
   async handleCreateIssue(args: CreateIssueArgs): Promise<McpToolResult> {
     try {
+      // Reject [DEV] prefix — redirect to create_dev_tasks_from_issue
+      if (/^\[DEV\]/i.test(args.title.trim())) {
+        return this.createErrorResult(
+          'Issues com prefixo [DEV] não podem ser criadas por esta tool. ' +
+          'Use create_dev_tasks_from_issue para criar tarefas [DEV] derivadas de uma US/TD/BUG.'
+        );
+      }
+
       const config = ConfigManager.getConfig();
       const groupPath = config.defaultGroup;
 
@@ -161,12 +171,20 @@ export class McpToolHandlers {
       });
 
       // Format result
-      const result = this.issueService.formatIssueResult({
+      let result = this.issueService.formatIssueResult({
         issue,
         project,
         assigneeUsername: user.username,
         labels,
       });
+
+      // Padrão PILGER: aviso suave se [US] não for criada no projeto correto
+      if (/^\[US\]/i.test(args.title.trim()) && args.project_name !== IssueService.PILGER_US_PROJECT) {
+        result += `\n\n---\n\n⚠️ **Aviso — Desvio do Padrão PILGER**\n` +
+          `Issues \`[US]\` devem ser criadas no projeto \`${IssueService.PILGER_US_PROJECT}\`. ` +
+          `Esta issue foi criada em \`${args.project_name}\`.\n` +
+          `Se este não era o projeto correto, mova a issue manualmente no GitLab.`;
+      }
 
       return this.createSuccessResult(result);
     } catch (error) {
@@ -536,7 +554,6 @@ ${issue.description || '*Sem descrição*'}`;
   async handleCreateDevTasks(args: CreateDevTasksArgs): Promise<McpToolResult> {
     try {
       const config = ConfigManager.getConfig();
-      const autoSuggest = args.auto_suggest !== false; // default true
 
       // 1. Buscar issue pai
       logger.info(`Fetching parent issue: ${args.parent_issue_url}`);
@@ -544,37 +561,56 @@ ${issue.description || '*Sem descrição*'}`;
         args.parent_issue_url
       );
 
-      // Show confirmation with parent issue info
-      logger.info(`[CONFIRMAÇÃO] Issue Pai identificada: #${parentIssue.iid} - ${parentIssue.title}`);
+      logger.info(`Issue Pai: #${parentIssue.iid} - ${parentIssue.title}`);
 
-      // 2. Extrair tarefas da descrição
-      let tasks = parseTasksFromDescription(parentIssue.description);
+      // ── PREVIEW MODE ──────────────────────────────────────────────────────
+      // task_title não fornecido → analisa US completa, retorna contexto para
+      // o LLM sugerir tarefas. Nenhuma issue é criada.
+      if (!args.task_title) {
+        logger.info('Preview mode: analyzing issue for task suggestion');
+        const analysis = analyzeIssueForTaskSuggestion(
+          parentIssue.description || '',
+          parentIssue.title
+        );
 
-      // 3. Se não encontrou tarefas e auto_suggest=true, gerar sugestões
-      if (tasks.length === 0) {
-        if (autoSuggest) {
-          logger.info('No explicit tasks found, suggesting tasks based on content');
-          tasks = suggestTasksFromDescription(parentIssue.description, parentIssue.title);
-        } else {
-          return this.createErrorResult(
-            'Nenhuma tarefa encontrada na descrição da issue. ' +
-            'Adicione checkboxes no formato "- [ ] Tarefa" ou use auto_suggest=true'
-          );
-        }
+        const previewResult =
+          `📋 **Issue Pai:** #${parentIssue.iid} — ${parentIssue.title}\n` +
+          `🔗 ${parentIssue.web_url}\n\n` +
+          `---\n\n` +
+          analysis;
+
+        return this.createSuccessResult(previewResult);
       }
 
-      logger.info(`Found ${tasks.length} tasks to create`);
+      // ── CREATE MODE ───────────────────────────────────────────────────────
+      // default_project é obrigatório em create mode
+      if (!args.default_project) {
+        return this.createErrorResult(
+          'default_project é obrigatório quando task_title é fornecido. ' +
+          'Informe o nome do projeto onde a issue [DEV] deve ser criada.'
+        );
+      }
 
-      // 4. Para cada tarefa, criar issue [DEV]
-      const createdIssues: Array<{ task: string; issue: any; project: string }> = [];
-      
-      // 5. Buscar projeto especificado (obrigatório)
+      // Resolve a tarefa: tenta encontrar em checkboxes da descrição; se não
+      // encontrar, aceita o task_title diretamente (sugestão do LLM via preview)
+      const allParsedTasks = parseTasksFromDescription(parentIssue.description || '');
+      const targetTitle = args.task_title.trim().toLowerCase();
+      const matchedTask = allParsedTasks.find(t => t.title.trim().toLowerCase() === targetTitle);
+      const taskToCreate = matchedTask ?? {
+        title: args.task_title.trim(),
+        description: `Tarefa derivada da issue pai.\n\n**Descrição:** ${args.task_title.trim()}`,
+        index: 0,
+      };
+
+      logger.info(`Creating [DEV] task: ${taskToCreate.title}`);
+
+      // Resolve projeto (obrigatório — nunca inferido)
       const targetProject = await this.projectService.findProjectByName(
         args.default_project,
         config.defaultGroup
       );
 
-      // Buscar assignee
+      // Resolve assignee
       const assigneeUsername = args.assignee || config.defaultAssignee;
       if (!assigneeUsername) {
         return this.createErrorResult(
@@ -583,71 +619,42 @@ ${issue.description || '*Sem descrição*'}`;
       }
       const user = await this.api.getUserByUsername(assigneeUsername);
 
-      for (const task of tasks) {
-        try {
-          // Criar issue [DEV] no projeto especificado
-          const devIssue = await this.issueService.createIssue({
-            projectId: targetProject.id,
-            title: `[DEV] ${task.title}`,
-            description: 
-              `**Issue Pai:** ${parentIssue.title} (#${parentIssue.iid})\n` +
-              `**URL:** ${parentIssue.web_url}\n\n---\n\n${task.description}`,
-            assigneeId: user.id,
-            labels: ['Development', 'Grupo Panvel :: Analyze'],
-          });
+      // Labels: usa o que o usuário forneceu ou o padrão compartilhado — nunca infere
+      const labels = args.labels || IssueService.getDefaultLabels();
 
-          // Criar link entre as issues (relates_to)
-          await this.api.createIssueLink(
-            targetProject.id,
-            devIssue.iid,
-            parentProject.id,
-            parentIssue.iid,
-            'relates_to'
-          );
-
-          createdIssues.push({
-            task: task.title,
-            issue: devIssue,
-            project: targetProject.name,
-          });
-
-          logger.info(`Created [DEV] issue #${devIssue.iid} for task: ${task.title}`);
-        } catch (error) {
-          logger.error(`Failed to create task "${task.title}"`, { error });
-          // Continue com próxima tarefa
-        }
-      }
-
-      // Formatar resultado
-      let resultText = `📋 **[CONFIRMAÇÃO] Issue Pai identificada:**
-**#${parentIssue.iid}** - ${parentIssue.title}
-**URL:** ${parentIssue.web_url}
-
----
-
-✅ **${createdIssues.length} de ${tasks.length} issues [DEV] criadas com sucesso!**
-
-📌 **Issue Pai:** ${parentIssue.title} (#${parentIssue.iid})
-🔗 ${parentIssue.web_url}
-
----
-
-📋 **Issues [DEV] Criadas:**
-
-`;
-
-      createdIssues.forEach((created, index) => {
-        resultText += `**${index + 1}. [DEV] ${created.task}**\n`;
-        resultText += `   - Projeto: ${created.project}\n`;
-        resultText += `   - Issue: #${created.issue.iid}\n`;
-        resultText += `   - URL: ${created.issue.web_url}\n`;
-        resultText += `   - Linked: relates_to #${parentIssue.iid}\n\n`;
+      // Criar issue [DEV]
+      const devIssue = await this.issueService.createIssue({
+        projectId: targetProject.id,
+        title: `[DEV] ${taskToCreate.title}`,
+        description:
+          `**Issue Pai:** ${parentIssue.title} (#${parentIssue.iid})\n` +
+          `**URL:** ${parentIssue.web_url}\n\n---\n\n${taskToCreate.description}`,
+        assigneeId: user.id,
+        labels,
       });
 
-      if (createdIssues.length < tasks.length) {
-        const failed = tasks.length - createdIssues.length;
-        resultText += `\n⚠️ ${failed} tarefa(s) falharam ao criar. Verifique os logs.`;
-      }
+      // Criar link: [DEV] blocks [US] — a US aparece como "blocked by" as DEVs
+      await this.api.createIssueLink(
+        targetProject.id,
+        devIssue.iid,
+        parentProject.id,
+        parentIssue.iid,
+        'blocks'
+      );
+
+      logger.info(`Created [DEV] issue #${devIssue.iid} for task: ${taskToCreate.title}`);
+
+      const resultText =
+        `📋 **Issue Pai:** #${parentIssue.iid} — ${parentIssue.title}\n` +
+        `🔗 ${parentIssue.web_url}\n\n` +
+        `---\n\n` +
+        `✅ **Issue [DEV] criada com sucesso!**\n\n` +
+        `**Título:** [DEV] ${taskToCreate.title}\n` +
+        `**Issue:** #${devIssue.iid}\n` +
+        `**Projeto:** ${targetProject.name}\n` +
+        `**URL:** ${devIssue.web_url}\n` +
+        `**Labels:** ${labels.join(', ')}\n` +
+        `**Linked:** [DEV] #${devIssue.iid} blocks [US] #${parentIssue.iid}`;
 
       return this.createSuccessResult(resultText);
     } catch (error) {

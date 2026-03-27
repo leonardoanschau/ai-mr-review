@@ -22,7 +22,13 @@ export interface IssueCreatedResult {
 }
 
 export class IssueService {
-  private static readonly DEFAULT_LABELS = ['Grupo Panvel :: Analyze', 'User Story'];
+  private static readonly DEFAULT_LABELS = ['Grupo Panvel :: Analyze'];
+
+  /**
+   * Padrão PILGER: issues [US] devem ser criadas no projeto 'user-stories'.
+   * Issues criadas em projeto diferente geram aviso no retorno.
+   */
+  static readonly PILGER_US_PROJECT = 'user-stories';
 
   constructor(private api: GitLabApiClient) {}
 

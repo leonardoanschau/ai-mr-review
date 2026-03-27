@@ -27,9 +27,14 @@ export class McpToolsDefinition {
       name: 'create_gitlab_issue',
       description:
         '✍️ Cria issue no GitLab. ' +
-        '⚠️ WORKFLOW: 1) Chamar list_gitlab_projects primeiro, 2) Usuário escolhe projeto, 3) Criar issue. ' +
-        'Título DEVE ter prefixo [US], [TD] ou [BUG]. ' +
-        'Exemplo input: {"project_name": "customer-job", "title": "[US] Implementar feature X", "description": "## Descrição\\n..." }. ' +
+        '⚠️ WORKFLOW: 1) Chamar list_gitlab_projects primeiro, 2) Usuário escolhe projeto, ' +
+        '3) ANUNCIAR ao usuário: "Vou criar esta issue seguindo o Padrão PILGER 📐" e exibir como ficará (título, projeto, labels, descrição), 4) AGUARDAR confirmação explícita, 5) Criar issue. ' +
+        '🚫 REJEITA prefixo [DEV]: se o título começar com [DEV], retorne erro e redirecione para create_dev_tasks_from_issue. ' +
+        'Aceita APENAS [US] (User Story), [TD] (Technical Debt) ou [BUG]. ' +
+        '📌 Padrão PILGER: issues [US] devem usar project_name="user-stories" ' +
+        '(ex: http://gitlab.dimed.com.br/grupopanvel/varejo/crm/services/user-stories/-/issues/N). ' +
+        'Se o usuário informar outro projeto para uma [US], a issue será criada, mas um aviso “Desvio do Padrão PILGER” será retornado. ' +
+        'Exemplo input: {"project_name": "user-stories", "title": "[US] Implementar feature X", "description": "## Descrição\\n..." }. ' +
         'Retorna: {"iid": 42, "web_url": "http://gitlab.dimed.com.br/.../issues/42"}',
       inputSchema: {
         type: 'object',
@@ -58,7 +63,8 @@ export class McpToolsDefinition {
             type: 'array',
             items: { type: 'string' },
             description:
-              'Array de strings. Padrão se omitido: ["Grupo Panvel :: Analyze", "User Story"]. Ex: ["Bug", "Alta prioridade"]',
+              'Labels a aplicar na issue. Padrão se omitido: ["Grupo Panvel :: Analyze"]. ' +
+              '🚫 NÃO infira labels além das explicitamente fornecidas pelo usuário.',
           },
         },
         required: ['project_name', 'title', 'description'],
@@ -287,18 +293,19 @@ export class McpToolsDefinition {
     return {
       name: 'create_dev_tasks_from_issue',
       description:
-        '⚠️⚠️⚠️ **OPERAÇÃO DESTRUTIVA - CRIA MÚLTIPLAS ISSUES** ⚠️⚠️⚠️\n\n' +
-        '🔨 Cria automaticamente issues [DEV] derivadas de uma US/TD/BUG. ' +
-        '**ANTES DE EXECUTAR**: 1) Chamar get_gitlab_issue para ver issue pai e tarefas, ' +
-        '2) MOSTRAR ao usuário quantas issues serão criadas e em qual projeto, ' +
-        '3) PERGUNTAR "Confirma criar X issues [DEV] no projeto Y? (sim/não)", ' +
-        '4) AGUARDAR resposta explícita do usuário, 5) Se "sim" → executar, se "não" → cancelar. ' +
-        'Extrai tarefas APENAS da seção "## ✅ Tarefas" ou "## Tarefas" (IGNORA checkboxes de "Critérios de Aceite" ou outras seções). ' +
-        'Se não houver seção de Tarefas e auto_suggest=true, sugere decomposição baseada no conteúdo. ' +
-        '⚠️ **OBRIGATÓRIO especificar default_project** - não cria automaticamente no projeto pai. ' +
-        'Para criar tarefas em projetos diferentes, execute a tool múltiplas vezes filtrando manualmente. ' +
-        'Exemplo: create_dev_tasks_from_issue({parent_issue_url: "http://gitlab.../issues/1038", default_project: "customer-service"}). ' +
-        'Workflow: 1) Parser tarefas da seção dedicada, 2) Criar issues [DEV] no projeto especificado, 3) Linkar com issue pai.',
+        '⚠️⚠️⚠️ **OPERAÇÃO DESTRUTIVA** ⚠️⚠️⚠️\n\n' +
+        '**WORKFLOW em 2 etapas:**\n' +
+        '**Etapa 1 — Preview** (sem task_title): ' +
+        'Busca a US pelo parent_issue_url, analisa o conteúdo COMPLETO (não só a seção "## Tarefas"), ' +
+        'retorna análise estruturada para o LLM sugerir tarefas. Nenhuma issue é criada. ' +
+        'O LLM DEVE apresentar as sugestões ao usuário e PERGUNTAR em qual projeto criar cada uma (NUNCA inferir). ' +
+        '**Etapa 2 — Criar** (com task_title + default_project): ' +
+        'Cria exatamente 1 issue [DEV] com o título informado e linka com a US pai usando “blocks”. ' +
+        'REPETIR a Etapa 2 para cada tarefa aprovada pelo usuário. ' +
+        '🚫 default_project É OBRIGATÓRIO em Etapa 2 e NUNCA deve ser inferido pela IA — sempre pergunte ao usuário. ' +
+        '🚫 NÃO crie múltiplas tarefas em uma única chamada — uma por vez, sempre. ' +
+        'Exemplo Etapa 1: create_dev_tasks_from_issue({parent_issue_url: "http://gitlab.../issues/1038"}). ' +
+        'Exemplo Etapa 2: create_dev_tasks_from_issue({parent_issue_url: "http://gitlab.../issues/1038", default_project: "customer-service", task_title: "Implementar endpoint X"}).',
       inputSchema: {
         type: 'object',
         properties: {
@@ -310,7 +317,9 @@ export class McpToolsDefinition {
           default_project: {
             type: 'string',
             description:
-              '⚠️ Nome do projeto onde as issues [DEV] serão criadas. **OBRIGATÓRIO**. Use list_gitlab_projects() para ver opções. Ex: "customer-service".',
+              '⚠️ Nome do projeto onde a issue [DEV] será criada. ' +
+              'Obrigatório na Etapa 2 (quando task_title é fornecido). Ignorado na Etapa 1 (preview). ' +
+              'NUNCA inferir — sempre perguntar ao usuário. Use list_gitlab_projects() para ver opções.',
           },
           auto_suggest: {
             type: 'boolean',
@@ -322,8 +331,22 @@ export class McpToolsDefinition {
             description:
               'Username GitLab para assignee das issues [DEV] criadas. Se omitido, usa assignee padrão configurado.',
           },
+          task_title: {
+            type: 'string',
+            description:
+              'Título EXATO da tarefa a criar nesta chamada (case-insensitive). ' +
+              'Use para criar UMA tarefa por vez. ' +
+              'Se omitido, cria TODAS as tarefas encontradas — evite isso, prefira informar task_title.',
+          },
+          labels: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Labels a aplicar nas issues [DEV]. Padrão se omitido: ["Grupo Panvel :: Analyze"]. ' +
+              '🚫 NÃO infira labels além das explicitamente fornecidas pelo usuário.',
+          },
         },
-        required: ['parent_issue_url', 'default_project'],
+        required: ['parent_issue_url'],
       },
     };
   }

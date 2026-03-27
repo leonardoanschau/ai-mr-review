@@ -33,8 +33,8 @@ export class McpToolsDefinition {
         'Aceita APENAS [US] (User Story), [TD] (Technical Debt) ou [BUG]. ' +
         '📌 Padrão PILGER: issues [US] devem usar project_name="user-stories" ' +
         '(ex: http://gitlab.dimed.com.br/grupopanvel/varejo/crm/services/user-stories/-/issues/N). ' +
-        'Se o usuário informar outro projeto para uma [US], a issue será criada, mas um aviso “Desvio do Padrão PILGER” será retornado. ' +
-        'Exemplo input: {"project_name": "user-stories", "title": "[US] Implementar feature X", "description": "## Descrição\\n..." }. ' +
+        'Se o usuário informar outro projeto para uma [US], a issue será criada, mas um aviso “Desvio do Padrão PILGER” será retornado. ' +        '🗓️ MILESTONE: Para issues [US] e [TD], se milestone_id não for fornecido, a tool retornará a lista de milestones disponíveis para seleção ANTES de criar a issue. ' +
+        'Chame novamente com o milestone_id escolhido (ou 0 para criar sem milestone). ' +        'Exemplo input: {"project_name": "user-stories", "title": "[US] Implementar feature X", "description": "## Descrição\\n..." }. ' +
         'Retorna: {"iid": 42, "web_url": "http://gitlab.dimed.com.br/.../issues/42"}',
       inputSchema: {
         type: 'object',
@@ -65,6 +65,19 @@ export class McpToolsDefinition {
             description:
               'Labels a aplicar na issue. Padrão se omitido: ["Grupo Panvel :: Analyze"]. ' +
               '🚫 NÃO infira labels além das explicitamente fornecidas pelo usuário.',
+          },
+          milestone_id: {
+            type: 'number',
+            description:
+              'ID numérico do milestone a associar à issue. ' +
+              'Se omitido em issues [US] ou [TD], a tool listará os milestones disponíveis para seleção antes de criar. ' +
+              'Use 0 para criar sem milestone após ver a lista.',
+          },
+          parent_issue_url: {
+            type: 'string',
+            description:
+              'URL completa da issue pai para criar link "blocks". ' +
+              'Ex: http://gitlab.dimed.com.br/grupopanvel/.../issues/10. Opcional.',
           },
         },
         required: ['project_name', 'title', 'description'],
@@ -160,6 +173,45 @@ export class McpToolsDefinition {
             description:
               'Alterar status (opcional): "close" para fechar, "reopen" para reabrir.',
             enum: ['close', 'reopen'],
+          },
+          milestone_id: {
+            type: 'number',
+            description:
+              'ID numérico do milestone para associar à issue (opcional). Use 0 para remover o milestone.',
+          },
+          parent_issue_url: {
+            type: 'string',
+            description:
+              'URL da issue pai que esta issue passa a bloquear (opcional). Cria vínculo "blocks" entre as issues.',
+          },
+        },
+        required: [],
+      },
+    };
+  }
+
+  static getIssueLinksTool(): McpTool {
+    return {
+      name: 'get_issue_links',
+      description:
+        '🔗 Lista todas as issues vinculadas a uma issue (relates_to, blocks, is_blocked_by). ' +
+        'Use para descobrir quais tasks [DEV] estão bloqueando uma US, ou quais issues dependem de outra. ' +
+        'Requer issue_url OU (project_name + issue_iid).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          issue_url: {
+            type: 'string',
+            description:
+              'URL completa da issue (ex: http://gitlab.dimed.com.br/grupopanvel/.../issues/42). Recomendado.',
+          },
+          project_name: {
+            type: 'string',
+            description: 'Nome do projeto (ex: "user-stories"). USE SE não fornecer issue_url.',
+          },
+          issue_iid: {
+            type: 'number',
+            description: 'IID da issue (número #X). USE SE não fornecer issue_url.',
           },
         },
         required: [],
@@ -357,6 +409,7 @@ export class McpToolsDefinition {
       this.createIssueTool(),
       this.getIssueTool(),
       this.updateIssueTool(),
+      this.getIssueLinksTool(),
       this.getTemplateTool(),
       this.reviewMergeRequestTool(),
       this.postMergeRequestCommentsTool(),

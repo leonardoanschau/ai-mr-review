@@ -128,8 +128,8 @@ describe('McpToolsDefinition.createDevTasksTool', () => {
 // ---------------------------------------------------------------------------
 
 describe('McpToolsDefinition.getAllTools', () => {
-  it('returns 8 tools', () => {
-    expect(McpToolsDefinition.getAllTools()).toHaveLength(8);
+  it('returns 9 tools', () => {
+    expect(McpToolsDefinition.getAllTools()).toHaveLength(9);
   });
 
   it('contains create_gitlab_issue and create_dev_tasks_from_issue', () => {

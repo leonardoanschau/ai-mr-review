@@ -32,6 +32,17 @@ export interface GitLabUser {
   name: string;
 }
 
+export interface GitLabMilestone {
+  id: number;
+  iid: number;
+  title: string;
+  description: string;
+  state: 'active' | 'closed';
+  web_url: string;
+  start_date?: string;
+  due_date?: string;
+}
+
 export interface GitLabIssue {
   id: number;
   iid: number;
@@ -44,6 +55,20 @@ export interface GitLabIssue {
     short: string;
     relative: string;
     full: string;
+  };
+  milestone?: {
+    id: number;
+    iid: number;
+    title: string;
+    web_url: string;
+  };
+  epic?: {
+    id: number;
+    iid: number;
+    title: string;
+    url?: string;
+    web_url?: string;
+    group_id?: number;
   };
 }
 
@@ -109,6 +134,8 @@ interface CreateIssueParams {
   description: string;
   assignee_ids: number[];
   labels: string[];
+  milestone_id?: number;
+  epic_id?: number;
   issue_links?: {
     target_project_id: number;
     target_issue_iid: number;
@@ -122,6 +149,17 @@ interface UpdateIssueParams {
   assignee_ids?: number[];
   labels?: string[];
   state_event?: 'close' | 'reopen';
+  milestone_id?: number | null;
+}
+
+export interface GitLabIssueLink {
+  id: number;
+  iid: number;
+  title: string;
+  state: string;
+  web_url: string;
+  references?: { short: string; relative: string; full: string };
+  link_type: 'relates_to' | 'blocks' | 'is_blocked_by';
 }
 
 export class GitLabApiClient {
@@ -345,6 +383,34 @@ export class GitLabApiClient {
     );
 
     logger.info(`Issue link created successfully`);
+  }
+
+  /**
+   * Get all issues linked to a given issue
+   */
+  async getIssueLinks(projectId: number, issueIid: number): Promise<GitLabIssueLink[]> {
+    logger.info(`Fetching links for issue #${issueIid} in project ${projectId}`);
+    return this.makeRequest<GitLabIssueLink[]>(
+      `/projects/${projectId}/issues/${issueIid}/links`
+    );
+  }
+
+
+  async listGroupMilestones(groupPath: string): Promise<GitLabMilestone[]> {
+    logger.info(`Fetching active milestones for group: ${groupPath}`);
+    const encodedGroup = encodeURIComponent(groupPath);
+    return this.makeRequest<GitLabMilestone[]>(
+      `/groups/${encodedGroup}/milestones`,
+      { params: { state: 'active', per_page: '50' } }
+    );
+  }
+
+  async listProjectMilestones(projectId: number): Promise<GitLabMilestone[]> {
+    logger.info(`Fetching active milestones for project: ${projectId}`);
+    return this.makeRequest<GitLabMilestone[]>(
+      `/projects/${projectId}/milestones`,
+      { params: { state: 'active', per_page: '50' } }
+    );
   }
 
   async getMergeRequest(

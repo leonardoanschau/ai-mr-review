@@ -12,6 +12,8 @@ export interface CreateIssueOptions {
   description: string;
   assigneeId: number;
   labels: string[];
+  milestoneId?: number;
+  epicId?: number;
 }
 
 export interface IssueCreatedResult {
@@ -40,6 +42,8 @@ export class IssueService {
       description: options.description,
       assignee_ids: [options.assigneeId],
       labels: options.labels,
+      ...(options.milestoneId ? { milestone_id: options.milestoneId } : {}),
+      ...(options.epicId ? { epic_id: options.epicId } : {}),
     });
 
     return issue;

@@ -21,6 +21,8 @@ interface CreateIssueArgs {
   description: string;
   assignee?: string;
   labels?: string[];
+  milestone_id?: number;
+  parent_issue_url?: string;
 }
 
 interface GetIssueArgs {
@@ -38,6 +40,8 @@ interface UpdateIssueArgs {
   assignee?: string;
   labels?: string[];
   state_event?: 'close' | 'reopen';
+  milestone_id?: number;
+  parent_issue_url?: string;
 }
 
 interface ReviewMergeRequestArgs {
@@ -65,6 +69,12 @@ interface CreateDevTasksArgs {
   auto_suggest?: boolean;
   assignee?: string;
   labels?: string[];
+}
+
+interface GetIssueLinksArgs {
+  issue_url?: string;
+  project_name?: string;
+  issue_iid?: number;
 }
 
 export class McpToolHandlers {
@@ -158,8 +168,51 @@ export class McpToolHandlers {
 
       const user = await this.api.getUserByUsername(assigneeUsername);
 
-      // Get labels
-      const labels = args.labels || IssueService.getDefaultLabels();
+      // ── LABELS: base + tipo automático (nunca inferidos além desses) ──────
+      const labels = args.labels ? [...args.labels] : IssueService.getDefaultLabels();
+      if (/^\[US\]/i.test(args.title.trim())) {
+        labels.push('User Story');
+      } else if (/^\[TD\]/i.test(args.title.trim())) {
+        labels.push('Technical Debit');
+      }
+      // [BUG] → sem label adicional
+
+      // ── MILESTONE PRE-CHECK ──────────────────────────────────────────────
+      // Para [US] e [TD], se milestone_id não foi fornecido, listar opções.
+      // milestone_id === 0 significa "criar sem milestone" (skip explícito).
+      const isUsOrTd = /^\[(US|TD)\]/i.test(args.title.trim());
+      if (isUsOrTd && args.milestone_id === undefined) {
+        let milestones: import('../gitlab/api.js').GitLabMilestone[] = [];
+        try {
+          milestones = await this.api.listGroupMilestones(groupPath);
+        } catch {
+          try {
+            milestones = await this.api.listProjectMilestones(project.id);
+          } catch {
+            milestones = [];
+          }
+        }
+
+        if (milestones.length > 0) {
+          const milestoneList = milestones
+            .map((m, i) => `${i + 1}. **ID ${m.id}** — ${m.title}${m.due_date ? ` (até ${m.due_date})` : ''}`)
+            .join('\n');
+
+          const result =
+            `🗓️ **Seleção de Milestone**\n\n` +
+            `Selecione o milestone para a issue **${args.title}**:\n\n` +
+            `${milestoneList}\n\n` +
+            `**0** — Criar sem milestone\n\n` +
+            `---\n\n` +
+            `Chame novamente \`create_gitlab_issue\` com o parâmetro \`milestone_id\` preenchido com o ID escolhido (ou \`0\` para nenhum).`;
+
+          return this.createSuccessResult(result);
+        }
+        // Se não houver milestones disponíveis, prosseguir sem milestone
+      }
+
+      // ── MILESTONE ID ─────────────────────────────────────────────────────
+      const milestoneId = (args.milestone_id && args.milestone_id > 0) ? args.milestone_id : undefined;
 
       // Create issue
       const issue = await this.issueService.createIssue({
@@ -168,7 +221,24 @@ export class McpToolHandlers {
         description: args.description,
         assigneeId: user.id,
         labels,
+        milestoneId,
       });
+
+      // ── PARENT LINK ───────────────────────────────────────────────────────
+      if (args.parent_issue_url) {
+        try {
+          const { project: parentProject, issue: parentIssue } = await this.api.getIssueByUrl(args.parent_issue_url);
+          await this.api.createIssueLink(
+            project.id,
+            issue.iid,
+            parentProject.id,
+            parentIssue.iid,
+            'blocks'
+          );
+        } catch (linkError) {
+          logger.error('Failed to create parent issue link', { error: linkError });
+        }
+      }
 
       // Format result
       let result = this.issueService.formatIssueResult({
@@ -177,6 +247,10 @@ export class McpToolHandlers {
         assigneeUsername: user.username,
         labels,
       });
+
+      if (milestoneId) {
+        result += `\n**Milestone ID:** ${milestoneId}`;
+      }
 
       // Padrão PILGER: aviso suave se [US] não for criada no projeto correto
       if (/^\[US\]/i.test(args.title.trim()) && args.project_name !== IssueService.PILGER_US_PROJECT) {
@@ -232,6 +306,15 @@ export class McpToolHandlers {
       const createdAt = new Date(issue.created_at).toLocaleString('pt-BR');
       const updatedAt = new Date(issue.updated_at).toLocaleString('pt-BR');
 
+      // Format milestone and epic (if present)
+      const milestoneInfo = issue.milestone
+        ? `\n**Milestone:** ${issue.milestone.title} (id: ${issue.milestone.id}) — ${issue.milestone.web_url}`
+        : '';
+      const epicUrl = issue.epic?.url ?? issue.epic?.web_url;
+      const epicInfo = issue.epic
+        ? `\n**Parent/Epic:** ${issue.epic.title} (iid: ${issue.epic.iid}) — ${epicUrl ?? 'sem URL'}`
+        : '';
+
       // Format result
       const result = `📋 **Issue Encontrada**
 
@@ -242,7 +325,7 @@ export class McpToolHandlers {
 **Labels:** ${issue.labels?.join(', ') || 'Nenhuma'}
 **Assignees:** ${assignees}
 **Criada em:** ${createdAt}
-**Atualizada em:** ${updatedAt}
+**Atualizada em:** ${updatedAt}${milestoneInfo}${epicInfo}
 **URL:** ${issue.web_url}
 
 ---
@@ -321,15 +404,35 @@ ${issue.description || '*Sem descrição*'}`;
         updateParams.state_event = args.state_event;
       }
 
+      if (args.milestone_id !== undefined) {
+        // 0 = remove milestone (GitLab API accepts null to clear)
+        updateParams.milestone_id = args.milestone_id === 0 ? null : args.milestone_id;
+      }
+
       // Check if at least one field is being updated
-      if (Object.keys(updateParams).length === 0) {
+      if (Object.keys(updateParams).length === 0 && !args.parent_issue_url) {
         return this.createErrorResult(
-          'Nenhum campo para atualizar. Forneça pelo menos: title, description, assignee, labels ou state_event.'
+          'Nenhum campo para atualizar. Forneça pelo menos: title, description, assignee, labels, state_event, milestone_id ou parent_issue_url.'
         );
       }
 
-      // Update issue
-      const updatedIssue = await this.api.updateIssue(projectId, issueIid, updateParams);
+      // Update issue (skip API call if only parent link is being set)
+      let updatedIssue = currentIssue;
+      if (Object.keys(updateParams).length > 0) {
+        updatedIssue = await this.api.updateIssue(projectId, issueIid, updateParams);
+      }
+
+      // Set parent link
+      if (args.parent_issue_url) {
+        const { project: parentProject, issue: parentIssue } = await this.api.getIssueByUrl(args.parent_issue_url);
+        await this.api.createIssueLink(
+          projectId,
+          issueIid,
+          parentProject.id,
+          parentIssue.iid,
+          'blocks'
+        );
+      }
 
       // Format result
       const result = `📋 **[CONFIRMAÇÃO] Issue identificada:**
@@ -346,12 +449,87 @@ ${issue.description || '*Sem descrição*'}`;
 **Labels:** ${updatedIssue.labels?.join(', ') || 'Nenhuma'}
 **URL:** ${updatedIssue.web_url}
 
-**Campos atualizados:** ${Object.keys(updateParams).join(', ')}`;
+**Campos atualizados:** ${[
+        ...Object.keys(updateParams),
+        ...(args.parent_issue_url ? ['parent_issue_url'] : []),
+      ].join(', ')}`;
 
       return this.createSuccessResult(result);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.error('Error updating issue', { error: message });
+      return this.createErrorResult(message);
+    }
+  }
+
+  async handleGetIssueLinks(args: GetIssueLinksArgs): Promise<McpToolResult> {
+    try {
+      const config = ConfigManager.getConfig();
+      const groupPath = config.defaultGroup;
+
+      if (!groupPath) {
+        return this.createErrorResult(
+          'GITLAB_DEFAULT_GROUP não configurado nas variáveis de ambiente'
+        );
+      }
+
+      let projectId: number;
+      let issueIid: number;
+      let issueTitle: string;
+      let issueUrl: string;
+
+      if (args.issue_url) {
+        const { project, issue } = await this.api.getIssueByUrl(args.issue_url);
+        projectId = project.id;
+        issueIid = issue.iid;
+        issueTitle = issue.title;
+        issueUrl = issue.web_url;
+      } else if (args.project_name && args.issue_iid) {
+        const project = await this.projectService.findProjectByName(
+          args.project_name,
+          groupPath
+        );
+        projectId = project.id;
+        issueIid = args.issue_iid;
+        issueTitle = `#${issueIid}`;
+        issueUrl = '';
+        const issue = await this.api.getIssue(projectId, issueIid);
+        issueTitle = issue.title;
+        issueUrl = issue.web_url;
+      } else {
+        return this.createErrorResult(
+          'Forneça issue_url OU (project_name + issue_iid)'
+        );
+      }
+
+      const links = await this.api.getIssueLinks(projectId, issueIid);
+
+      if (links.length === 0) {
+        return this.createSuccessResult(
+          `🔗 **Issue #${issueIid} — ${issueTitle}**\n\nNenhuma issue vinculada.`
+        );
+      }
+
+      const linkTypeLabel: Record<string, string> = {
+        relates_to: '🔄 Relacionada',
+        blocks: '🚧 Bloqueia',
+        is_blocked_by: '⏳ Bloqueada por',
+      };
+
+      const linksList = links
+        .map(l => {
+          const typeLabel = linkTypeLabel[l.link_type] ?? l.link_type;
+          const stateIcon = l.state === 'closed' ? '✅' : '🟡';
+          return `${stateIcon} **[#${l.iid}] ${l.title}**\n   ${typeLabel} | ${l.state} | ${l.web_url}`;
+        })
+        .join('\n\n');
+
+      const result = `🔗 **Issues Vinculadas a #${issueIid} — ${issueTitle}**\n**URL:** ${issueUrl}\n\n---\n\n${linksList}\n\n**Total:** ${links.length} vínculo(s)`;
+
+      return this.createSuccessResult(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Error getting issue links', { error: message });
       return this.createErrorResult(message);
     }
   }
@@ -573,10 +751,23 @@ ${issue.description || '*Sem descrição*'}`;
           parentIssue.title
         );
 
+        const milestoneInfo = parentIssue.milestone
+          ? `\n**Milestone:** ${parentIssue.milestone.title} (id: ${parentIssue.milestone.id})`
+          : '';
+        const epicInfo = parentIssue.epic
+          ? `\n**Epic:** ${parentIssue.epic.title} (id: ${parentIssue.epic.id})`
+          : '';
+        const inheritNote = (parentIssue.milestone || parentIssue.epic)
+          ? `\n\n> ℹ️ Milestone${parentIssue.epic ? ' e Epic' : ''} serão herdados automaticamente nas tasks DEV criadas.`
+          : '';
+
         const previewResult =
           `📋 **Issue Pai:** #${parentIssue.iid} — ${parentIssue.title}\n` +
-          `🔗 ${parentIssue.web_url}\n\n` +
-          `---\n\n` +
+          `🔗 ${parentIssue.web_url}` +
+          milestoneInfo +
+          epicInfo +
+          inheritNote +
+          `\n\n---\n\n` +
           analysis;
 
         return this.createSuccessResult(previewResult);
@@ -622,15 +813,19 @@ ${issue.description || '*Sem descrição*'}`;
       // Labels: usa o que o usuário forneceu ou o padrão compartilhado — nunca infere
       const labels = args.labels || IssueService.getDefaultLabels();
 
-      // Criar issue [DEV]
+      // Criar issue [DEV] — strip [DEV] prefix from task_title if provided to avoid duplication
+      // Inherit milestone and epic from parent US automatically
+      const cleanTitle = taskToCreate.title.replace(/^\[DEV\]\s*/i, '').trim();
       const devIssue = await this.issueService.createIssue({
         projectId: targetProject.id,
-        title: `[DEV] ${taskToCreate.title}`,
+        title: `[DEV] ${cleanTitle}`,
         description:
           `**Issue Pai:** ${parentIssue.title} (#${parentIssue.iid})\n` +
           `**URL:** ${parentIssue.web_url}\n\n---\n\n${taskToCreate.description}`,
         assigneeId: user.id,
         labels,
+        milestoneId: parentIssue.milestone?.id,
+        epicId: parentIssue.epic?.id,
       });
 
       // Criar link: [DEV] blocks [US] — a US aparece como "blocked by" as DEVs
@@ -642,19 +837,24 @@ ${issue.description || '*Sem descrição*'}`;
         'blocks'
       );
 
-      logger.info(`Created [DEV] issue #${devIssue.iid} for task: ${taskToCreate.title}`);
+      logger.info(`Created [DEV] issue #${devIssue.iid} for task: ${cleanTitle}`);
+
+      const milestoneCreatedInfo = parentIssue.milestone ? `\n**Milestone:** ${parentIssue.milestone.title}` : '';
+      const epicCreatedInfo = parentIssue.epic ? `\n**Epic:** ${parentIssue.epic.title}` : '';
 
       const resultText =
         `📋 **Issue Pai:** #${parentIssue.iid} — ${parentIssue.title}\n` +
         `🔗 ${parentIssue.web_url}\n\n` +
         `---\n\n` +
         `✅ **Issue [DEV] criada com sucesso!**\n\n` +
-        `**Título:** [DEV] ${taskToCreate.title}\n` +
+        `**Título:** [DEV] ${cleanTitle}\n` +
         `**Issue:** #${devIssue.iid}\n` +
         `**Projeto:** ${targetProject.name}\n` +
         `**URL:** ${devIssue.web_url}\n` +
-        `**Labels:** ${labels.join(', ')}\n` +
-        `**Linked:** [DEV] #${devIssue.iid} blocks [US] #${parentIssue.iid}`;
+        `**Labels:** ${labels.join(', ')}` +
+        milestoneCreatedInfo +
+        epicCreatedInfo +
+        `\n**Linked:** [DEV] #${devIssue.iid} blocks [US] #${parentIssue.iid}`;
 
       return this.createSuccessResult(resultText);
     } catch (error) {
@@ -691,6 +891,9 @@ ${issue.description || '*Sem descrição*'}`;
 
       case 'create_dev_tasks_from_issue':
         return await this.handleCreateDevTasks(args as CreateDevTasksArgs);
+
+      case 'get_issue_links':
+        return await this.handleGetIssueLinks(args as GetIssueLinksArgs);
 
       default:
         return this.createErrorResult(`Unknown tool: ${toolName}`);

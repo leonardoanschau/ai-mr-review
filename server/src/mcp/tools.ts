@@ -27,14 +27,14 @@ export class McpToolsDefinition {
       name: 'create_gitlab_issue',
       description:
         '✍️ Cria issue no GitLab. ' +
-        '⚠️ WORKFLOW: 1) Chamar list_gitlab_projects primeiro, 2) Usuário escolhe projeto, ' +
+        '⚠️ WORKFLOW: 1) Chamar get_gitlab_parents_and_milestones para obter epic_id e milestone_id, 2) Chamar list_gitlab_projects para o usuário escolher o projeto, ' +
         '3) ANUNCIAR ao usuário: "Vou criar esta issue seguindo o Padrão PILGER 📐" e exibir como ficará (título, projeto, labels, descrição), 4) AGUARDAR confirmação explícita, 5) Criar issue. ' +
         '🚫 REJEITA prefixo [DEV]: se o título começar com [DEV], retorne erro e redirecione para create_dev_tasks_from_issue. ' +
         'Aceita APENAS [US] (User Story), [TD] (Technical Debt) ou [BUG]. ' +
         '📌 Padrão PILGER: issues [US] devem usar project_name="user-stories" ' +
         '(ex: http://gitlab.dimed.com.br/grupopanvel/varejo/crm/services/user-stories/-/issues/N). ' +
-        'Se o usuário informar outro projeto para uma [US], a issue será criada, mas um aviso “Desvio do Padrão PILGER” será retornado. ' +        '🗓️ MILESTONE + EPIC: Para issues [US] e [TD], se milestone_id ou epic_id não forem fornecidos, a tool retornará as listas disponíveis para seleção ANTES de criar. ' +
-        'Chame novamente com milestone_id e epic_id escolhidos (ou 0 para criar sem). ' +        'Exemplo input: {"project_name": "user-stories", "title": "[US] Implementar feature X", "description": "## Descrição\\n..." }. ' +
+        'Se o usuário informar outro projeto para uma [US], a issue será criada, mas um aviso "Desvio do Padrão PILGER" será retornado. ' +
+        'Exemplo input: {"project_name": "user-stories", "title": "[US] Implementar feature X", "description": "## Descrição\\n...", "milestone_id": 5610, "epic_id": 1416 }. ' +
         'Retorna: {"iid": 42, "web_url": "http://gitlab.dimed.com.br/.../issues/42"}',
       inputSchema: {
         type: 'object',

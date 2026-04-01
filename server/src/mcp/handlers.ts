@@ -183,41 +183,6 @@ export class McpToolHandlers {
       }
       // [BUG] → sem label adicional
 
-      // ── MILESTONE PRE-CHECK ──────────────────────────────────────────────
-      // Para [US] e [TD], se milestone_id não foi fornecido, listar opções.
-      // milestone_id === 0 significa "criar sem milestone" (skip explícito).
-      const isUsOrTd = /^\[(US|TD)\]/i.test(args.title.trim());
-      if (isUsOrTd && args.milestone_id === undefined) {
-        let milestones: import('../gitlab/api.js').GitLabMilestone[] = [];
-        try {
-          milestones = await this.api.listGroupMilestones(groupPath);
-        } catch {
-          try {
-            milestones = await this.api.listProjectMilestones(project.id);
-          } catch {
-            milestones = [];
-          }
-        }
-
-        if (milestones.length > 0) {
-          const list = milestones
-            .map((m, i) => `${i + 1}. **ID ${m.id}** — ${m.title}${m.due_date ? ` (até ${m.due_date})` : ''}`)
-            .join('\n');
-
-          const result =
-            `🗓️ **Seleção de Milestone**\n\n` +
-            `Selecione o milestone para a issue **${args.title}**:\n\n` +
-            `${list}\n\n` +
-            `**0** — Criar sem milestone\n\n` +
-            `---\n\n` +
-            `Chame novamente \`create_gitlab_issue\` com \`milestone_id\` preenchido (ou \`0\` para nenhum).\n` +
-            `> ℹ️ Para associar um Epic, use a tool \`get_gitlab_epics\` para listar os disponíveis e informe \`epic_id\`.`;
-
-          return this.createSuccessResult(result);
-        }
-        // Se não houver milestones disponíveis, prosseguir sem milestone
-      }
-
       // ── MILESTONE + EPIC IDS ──────────────────────────────────────────────────
       const milestoneId = (args.milestone_id && args.milestone_id > 0) ? args.milestone_id : undefined;
       const epicId = (args.epic_id && args.epic_id > 0) ? args.epic_id : undefined;

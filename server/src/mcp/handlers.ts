@@ -22,6 +22,7 @@ interface CreateIssueArgs {
   assignee?: string;
   labels?: string[];
   milestone_id?: number;
+  epic_id?: number;
   parent_issue_url?: string;
 }
 
@@ -75,6 +76,11 @@ interface GetIssueLinksArgs {
   issue_url?: string;
   project_name?: string;
   issue_iid?: number;
+}
+
+interface GetEpicsArgs {
+  group_path?: string; // opcional; usa o grupo pai do defaultGroup se omitido
+  search?: string;
 }
 
 export class McpToolHandlers {
@@ -194,25 +200,27 @@ export class McpToolHandlers {
         }
 
         if (milestones.length > 0) {
-          const milestoneList = milestones
+          const list = milestones
             .map((m, i) => `${i + 1}. **ID ${m.id}** — ${m.title}${m.due_date ? ` (até ${m.due_date})` : ''}`)
             .join('\n');
 
           const result =
             `🗓️ **Seleção de Milestone**\n\n` +
             `Selecione o milestone para a issue **${args.title}**:\n\n` +
-            `${milestoneList}\n\n` +
+            `${list}\n\n` +
             `**0** — Criar sem milestone\n\n` +
             `---\n\n` +
-            `Chame novamente \`create_gitlab_issue\` com o parâmetro \`milestone_id\` preenchido com o ID escolhido (ou \`0\` para nenhum).`;
+            `Chame novamente \`create_gitlab_issue\` com \`milestone_id\` preenchido (ou \`0\` para nenhum).\n` +
+            `> ℹ️ Para associar um Epic, use a tool \`get_gitlab_epics\` para listar os disponíveis e informe \`epic_id\`.`;
 
           return this.createSuccessResult(result);
         }
         // Se não houver milestones disponíveis, prosseguir sem milestone
       }
 
-      // ── MILESTONE ID ─────────────────────────────────────────────────────
+      // ── MILESTONE + EPIC IDS ──────────────────────────────────────────────────
       const milestoneId = (args.milestone_id && args.milestone_id > 0) ? args.milestone_id : undefined;
+      const epicId = (args.epic_id && args.epic_id > 0) ? args.epic_id : undefined;
 
       // Create issue
       const issue = await this.issueService.createIssue({
@@ -222,6 +230,7 @@ export class McpToolHandlers {
         assigneeId: user.id,
         labels,
         milestoneId,
+        epicId,
       });
 
       // ── PARENT LINK ───────────────────────────────────────────────────────
@@ -895,8 +904,44 @@ ${issue.description || '*Sem descrição*'}`;
       case 'get_issue_links':
         return await this.handleGetIssueLinks(args as GetIssueLinksArgs);
 
+      case 'get_gitlab_epics':
+        return await this.handleGetEpics(args as GetEpicsArgs);
+
       default:
         return this.createErrorResult(`Unknown tool: ${toolName}`);
+    }
+  }
+
+  async handleGetEpics(args: GetEpicsArgs): Promise<McpToolResult> {
+    try {
+      const config = ConfigManager.getConfig();
+      // Epics vivem no grupo raiz (ex: 'grupopanvel'), não no subgrupo
+      const defaultGroupRoot = config.defaultGroup.split('/')[0];
+      const groupPath = args.group_path || defaultGroupRoot;
+
+      const epics = await this.api.listGroupEpics(groupPath, args.search);
+
+      if (epics.length === 0) {
+        return this.createSuccessResult(
+          `🏷️ Nenhum epic aberto encontrado no grupo **${groupPath}**${args.search ? ` (busca: "${args.search}")` : ''}.`
+        );
+      }
+
+      const list = epics
+        .map((e, i) => `${i + 1}. **ID ${e.id}** (iid: ${e.iid}) — ${e.title}`)
+        .join('\n');
+
+      const result =
+        `🏷️ **Epics abertos em \`${groupPath}\`**${args.search ? ` (busca: "${args.search}")` : ''} (${epics.length} encontrados):\n\n` +
+        `${list}\n\n` +
+        `---\n\n` +
+        `> Use o **ID** (coluna \`id\`) como valor de \`epic_id\` ao chamar \`create_gitlab_issue\`.`;
+
+      return this.createSuccessResult(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Error fetching epics', { error: message });
+      return this.createErrorResult(message);
     }
   }
 }

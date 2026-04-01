@@ -54,6 +54,7 @@ vi.mock('../gitlab/api.js', () => ({
     getIssueLinks: mockGetIssueLinks,
     listGroupMilestones: vi.fn().mockResolvedValue([]),
     listProjectMilestones: vi.fn().mockResolvedValue([]),
+    listGroupEpics: vi.fn().mockResolvedValue([]),
   })),
 }));
 
@@ -731,6 +732,7 @@ describe('handleCreateIssue — milestone pre-check', () => {
   let handlers: McpToolHandlers;
   const mockListGroupMilestones = vi.fn();
   const mockListProjectMilestones = vi.fn();
+  const mockListGroupEpics = vi.fn();
 
   const fakeMilestones = [
     { id: 101, iid: 1, title: 'Sprint 1', state: 'active', web_url: 'http://gitlab/ms/1', due_date: '2026-04-01' },
@@ -744,9 +746,11 @@ describe('handleCreateIssue — milestone pre-check', () => {
     mockGetUserByUsername.mockResolvedValue(fakeUser);
     mockCreateIssue.mockResolvedValue({ ...fakeIssue, iid: 10 });
 
-    // Inject milestone mocks into the api instance
+    // Inject milestone + epic mocks into the api instance
     (handlers as any).api.listGroupMilestones = mockListGroupMilestones;
     (handlers as any).api.listProjectMilestones = mockListProjectMilestones;
+    (handlers as any).api.listGroupEpics = mockListGroupEpics;
+    mockListGroupEpics.mockResolvedValue([]); // default: no epics
   });
 
   it('[US] without milestone_id returns milestone list (does not create issue)', async () => {
@@ -861,6 +865,7 @@ describe('handleCreateIssue — milestone pre-check', () => {
     expect(result.content[0].text).toContain('0');
     expect(result.content[0].text).toContain('Criar sem milestone');
   });
+
 });
 
 // ---------------------------------------------------------------------------

@@ -33,8 +33,8 @@ export class McpToolsDefinition {
         'Aceita APENAS [US] (User Story), [TD] (Technical Debt) ou [BUG]. ' +
         '📌 Padrão PILGER: issues [US] devem usar project_name="user-stories" ' +
         '(ex: http://gitlab.dimed.com.br/grupopanvel/varejo/crm/services/user-stories/-/issues/N). ' +
-        'Se o usuário informar outro projeto para uma [US], a issue será criada, mas um aviso “Desvio do Padrão PILGER” será retornado. ' +        '🗓️ MILESTONE: Para issues [US] e [TD], se milestone_id não for fornecido, a tool retornará a lista de milestones disponíveis para seleção ANTES de criar a issue. ' +
-        'Chame novamente com o milestone_id escolhido (ou 0 para criar sem milestone). ' +        'Exemplo input: {"project_name": "user-stories", "title": "[US] Implementar feature X", "description": "## Descrição\\n..." }. ' +
+        'Se o usuário informar outro projeto para uma [US], a issue será criada, mas um aviso “Desvio do Padrão PILGER” será retornado. ' +        '🗓️ MILESTONE + EPIC: Para issues [US] e [TD], se milestone_id ou epic_id não forem fornecidos, a tool retornará as listas disponíveis para seleção ANTES de criar. ' +
+        'Chame novamente com milestone_id e epic_id escolhidos (ou 0 para criar sem). ' +        'Exemplo input: {"project_name": "user-stories", "title": "[US] Implementar feature X", "description": "## Descrição\\n..." }. ' +
         'Retorna: {"iid": 42, "web_url": "http://gitlab.dimed.com.br/.../issues/42"}',
       inputSchema: {
         type: 'object',
@@ -70,8 +70,15 @@ export class McpToolsDefinition {
             type: 'number',
             description:
               'ID numérico do milestone a associar à issue. ' +
-              'Se omitido em issues [US] ou [TD], a tool listará os milestones disponíveis para seleção antes de criar. ' +
+              'Se omitido em issues [US] ou [TD], a tool listará os milestones disponíveis. ' +
               'Use 0 para criar sem milestone após ver a lista.',
+          },
+          epic_id: {
+            type: 'number',
+            description:
+              'ID global (não iid) do epic a associar à issue. ' +
+              'Se omitido em issues [US] ou [TD], a tool listará os epics disponíveis. ' +
+              'Use 0 para criar sem epic após ver a lista.',
           },
           parent_issue_url: {
             type: 'string',
@@ -403,6 +410,32 @@ export class McpToolsDefinition {
     };
   }
 
+  static getEpicsTool(): McpTool {
+    return {
+      name: 'get_gitlab_epics',
+      description:
+        '🏷️ Lista os epics abertos de um grupo GitLab. ' +
+        'Use ANTES de create_gitlab_issue para obter o epic_id correto a associar à issue. ' +
+        'Por padrão busca no grupo raiz do defaultGroup (ex: "grupopanvel"). ' +
+        'Aceita busca por nome via parâmetro search.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          group_path: {
+            type: 'string',
+            description:
+              'Caminho do grupo GitLab (ex: "grupopanvel"). Se omitido, usa o grupo raiz do defaultGroup.',
+          },
+          search: {
+            type: 'string',
+            description: 'Filtro de busca por nome do epic (ex: "Prime"). Opcional.',
+          },
+        },
+        required: [],
+      },
+    };
+  }
+
   static getAllTools(): McpTool[] {
     return [
       this.listProjectsTool(),
@@ -414,6 +447,7 @@ export class McpToolsDefinition {
       this.reviewMergeRequestTool(),
       this.postMergeRequestCommentsTool(),
       this.createDevTasksTool(),
+      this.getEpicsTool(),
     ];
   }
 }

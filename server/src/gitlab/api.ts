@@ -43,6 +43,15 @@ export interface GitLabMilestone {
   due_date?: string;
 }
 
+export interface GitLabEpicSummary {
+  id: number;       // global id — usado como epic_id na criação de issues
+  iid: number;      // id relativo ao grupo
+  title: string;
+  state: string;
+  web_url: string;
+  group_id: number;
+}
+
 export interface GitLabIssue {
   id: number;
   iid: number;
@@ -402,6 +411,17 @@ export class GitLabApiClient {
     return this.makeRequest<GitLabMilestone[]>(
       `/groups/${encodedGroup}/milestones`,
       { params: { state: 'active', per_page: '50' } }
+    );
+  }
+
+  async listGroupEpics(groupPath: string, search?: string): Promise<GitLabEpicSummary[]> {
+    logger.info(`Fetching opened epics for group: ${groupPath}`);
+    const encodedGroup = encodeURIComponent(groupPath);
+    const params: Record<string, string> = { state: 'opened', per_page: '50' };
+    if (search) params.search = search;
+    return this.makeRequest<GitLabEpicSummary[]>(
+      `/groups/${encodedGroup}/epics`,
+      { params }
     );
   }
 

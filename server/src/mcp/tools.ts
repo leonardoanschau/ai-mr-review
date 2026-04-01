@@ -412,12 +412,17 @@ export class McpToolsDefinition {
 
   static getEpicsTool(): McpTool {
     return {
-      name: 'get_gitlab_epics',
+      name: 'get_gitlab_parents_and_milestones',
       description:
-        '🏷️ Lista os epics abertos de um grupo GitLab. ' +
-        'Use ANTES de create_gitlab_issue para obter o epic_id correto a associar à issue. ' +
-        'Por padrão busca no grupo raiz do defaultGroup (ex: "grupopanvel"). ' +
-        'Aceita busca por nome via parâmetro search.',
+        '🏷️ Lista Parents (Epics) abertos E Milestones ativas de um grupo GitLab. ' +
+        'No GitLab, visualmente os Epics aparecem como "Parent" nas issues — esta tool trata os dois como sinônimos. ' +
+        'Use ANTES de create_gitlab_issue para obter epic_id (parent_id) e milestone_id corretos. ' +
+        'Retorna ambos em uma única chamada. ' +
+        'Por padrão busca Parents no grupo raiz do defaultGroup (ex: "grupopanvel") e Milestones no defaultGroup. ' +
+        'Aceita busca por nome de Parent/Epic via parâmetro search. ' +
+        'Sinônimos aceitos: "parent" = "epic".',
+
+
       inputSchema: {
         type: 'object',
         properties: {
@@ -447,7 +452,7 @@ export class McpToolsDefinition {
       this.reviewMergeRequestTool(),
       this.postMergeRequestCommentsTool(),
       this.createDevTasksTool(),
-      this.getEpicsTool(),
+      this.getEpicsTool(),  // get_gitlab_parents_and_milestones
     ];
   }
 }

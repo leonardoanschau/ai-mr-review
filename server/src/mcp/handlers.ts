@@ -905,6 +905,7 @@ ${issue.description || '*Sem descrição*'}`;
         return await this.handleGetIssueLinks(args as GetIssueLinksArgs);
 
       case 'get_gitlab_epics':
+      case 'get_gitlab_parents_and_milestones':
         return await this.handleGetEpics(args as GetEpicsArgs);
 
       default:
@@ -919,23 +920,36 @@ ${issue.description || '*Sem descrição*'}`;
       const defaultGroupRoot = config.defaultGroup.split('/')[0];
       const groupPath = args.group_path || defaultGroupRoot;
 
-      const epics = await this.api.listGroupEpics(groupPath, args.search);
+      // Busca epics e milestones em paralelo (milestones do grupo raiz + defaultGroup)
+      const [epics, milestonesRoot, milestonesDefault] = await Promise.all([
+        this.api.listGroupEpics(groupPath, args.search),
+        this.api.listGroupMilestones(defaultGroupRoot).catch(() => [] as import('../gitlab/api.js').GitLabMilestone[]),
+        this.api.listGroupMilestones(config.defaultGroup).catch(() => [] as import('../gitlab/api.js').GitLabMilestone[]),
+      ]);
 
-      if (epics.length === 0) {
-        return this.createSuccessResult(
-          `🏷️ Nenhum epic aberto encontrado no grupo **${groupPath}**${args.search ? ` (busca: "${args.search}")` : ''}.`
-        );
-      }
+      // Mescla e deduplica por id
+      const seenIds = new Set<number>();
+      const milestones = [...milestonesRoot, ...milestonesDefault].filter(m => {
+        if (seenIds.has(m.id)) return false;
+        seenIds.add(m.id);
+        return true;
+      });
 
-      const list = epics
-        .map((e, i) => `${i + 1}. **ID ${e.id}** (iid: ${e.iid}) — ${e.title}`)
-        .join('\n');
+      // ── EPICS ────────────────────────────────────────────────────────────
+      const epicsSection = epics.length === 0
+        ? `🏷️ Nenhum Parent (Epic) aberto encontrado no grupo **${groupPath}**${args.search ? ` (busca: "${args.search}")` : ''}.`
+        : `🏷️ **Parents (Epics) abertos em \`${groupPath}\`**${args.search ? ` (busca: "${args.search}")` : ''} (${epics.length} encontrados):\n\n` +
+          epics.map((e, i) => `${i + 1}. **ID ${e.id}** (iid: ${e.iid}) — ${e.title}`).join('\n') +
+          `\n\n> Use o **ID** como valor de \`epic_id\` ao chamar \`create_gitlab_issue\` (também chamado de Parent no GitLab).`;
 
-      const result =
-        `🏷️ **Epics abertos em \`${groupPath}\`**${args.search ? ` (busca: "${args.search}")` : ''} (${epics.length} encontrados):\n\n` +
-        `${list}\n\n` +
-        `---\n\n` +
-        `> Use o **ID** (coluna \`id\`) como valor de \`epic_id\` ao chamar \`create_gitlab_issue\`.`;
+      // ── MILESTONES ────────────────────────────────────────────────────────
+      const milestonesSection = milestones.length === 0
+        ? `🗓️ Nenhuma milestone ativa encontrada.`
+        : `🗓️ **Milestones ativas** (${milestones.length} encontradas):\n\n` +
+          milestones.map((m, i) => `${i + 1}. **ID ${m.id}** — ${m.title}${m.due_date ? ` (até ${m.due_date})` : ''}`).join('\n') +
+          `\n\n> Use o **ID** como valor de \`milestone_id\` ao chamar \`create_gitlab_issue\`.`;
+
+      const result = `${epicsSection}\n\n---\n\n${milestonesSection}`;
 
       return this.createSuccessResult(result);
     } catch (error) {

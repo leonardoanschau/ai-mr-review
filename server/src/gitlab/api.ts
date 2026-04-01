@@ -180,6 +180,42 @@ export class GitLabApiClient {
     private token: string
   ) {}
 
+  private async makePagedRequest<T>(
+    endpoint: string,
+    params: Record<string, string> = {}
+  ): Promise<T[]> {
+    const allItems: T[] = [];
+    let page = 1;
+
+    while (true) {
+      const url = new URL(`${this.apiUrl}${endpoint}`);
+      Object.entries({ ...params, per_page: '100', page: String(page) }).forEach(([k, v]) => {
+        url.searchParams.append(k, v);
+      });
+
+      logger.debug(`GET (paged p${page}) ${url.toString()}`);
+
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: { 'PRIVATE-TOKEN': this.token, 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(GitLabApiClient.REQUEST_TIMEOUT),
+      });
+
+      if (!response.ok) {
+        await this.handleErrorResponse(response);
+      }
+
+      const items = (await response.json()) as T[];
+      allItems.push(...items);
+
+      const nextPage = response.headers.get('x-next-page');
+      if (!nextPage || nextPage === '') break;
+      page = parseInt(nextPage, 10);
+    }
+
+    return allItems;
+  }
+
   private async makeRequest<T>(
     endpoint: string,
     options: {
@@ -408,28 +444,28 @@ export class GitLabApiClient {
   async listGroupMilestones(groupPath: string): Promise<GitLabMilestone[]> {
     logger.info(`Fetching active milestones for group: ${groupPath}`);
     const encodedGroup = encodeURIComponent(groupPath);
-    return this.makeRequest<GitLabMilestone[]>(
+    return this.makePagedRequest<GitLabMilestone[]>(
       `/groups/${encodedGroup}/milestones`,
-      { params: { state: 'active', per_page: '50' } }
-    );
+      { state: 'active' }
+    ) as unknown as Promise<GitLabMilestone[]>;
   }
 
   async listGroupEpics(groupPath: string, search?: string): Promise<GitLabEpicSummary[]> {
     logger.info(`Fetching opened epics for group: ${groupPath}`);
     const encodedGroup = encodeURIComponent(groupPath);
-    const params: Record<string, string> = { state: 'opened', per_page: '50' };
+    const params: Record<string, string> = { state: 'opened' };
     if (search) params.search = search;
-    return this.makeRequest<GitLabEpicSummary[]>(
+    return this.makePagedRequest<GitLabEpicSummary>(
       `/groups/${encodedGroup}/epics`,
-      { params }
+      params
     );
   }
 
   async listProjectMilestones(projectId: number): Promise<GitLabMilestone[]> {
     logger.info(`Fetching active milestones for project: ${projectId}`);
-    return this.makeRequest<GitLabMilestone[]>(
+    return this.makePagedRequest<GitLabMilestone>(
       `/projects/${projectId}/milestones`,
-      { params: { state: 'active', per_page: '50' } }
+      { state: 'active' }
     );
   }
 
